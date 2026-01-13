@@ -1,0 +1,2863 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神经网络可视化构建工具（最终优化版）</title>
+    <!-- 引入Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 覆盖 Tailwind 样式 */
+        .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+            margin-top: 0 !important;
+        }
+        .p-3 {
+            padding: 0 !important;
+        }
+        .border {
+            border: none !important;
+        }
+        /* 补充少量自定义样式 */
+        canvas {
+            border: 1px solid #e2e8f0;
+            background-color: #f8fafc;
+            cursor: grab;
+        }
+        .layer-item {
+            transition: all 0.3s ease;
+        }
+        .layer-item:hover {
+            background-color: #f1f5f9;
+        }
+        /* 权重容器样式（包含参数名、上下标和输入框） */
+        .weight-container {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            transform-origin: center center;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            padding: 2px 6px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            height: 22px;
+            font-size: 11px;
+            white-space: nowrap;
+            pointer-events: auto;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .weight-container:hover,
+        .weight-container.visible {
+            opacity: 1;
+        }
+        .weight-label {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 2px;
+            font-style: italic;
+        }
+        .weight-label-w {
+            font-size: 12px;
+        }
+        .weight-scripts {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            margin-left: 1px;
+            line-height: 0.9;
+        }
+        .weight-superscript {
+            font-size: 7px;
+            margin-bottom: 1px;
+        }
+        .weight-subscript {
+            font-size: 7px;
+            margin-top: 1px;
+        }
+        .weight-input {
+            width: 28px;
+            height: 18px;
+            font-size: 11px;
+            text-align: center;
+            border: none;
+            border-radius: 2px;
+            background: transparent;
+            outline: none;
+            padding: 0 2px;
+            cursor: text;
+            pointer-events: auto;
+            position: relative;
+            z-index: 100;
+        }
+        .weight-input:focus {
+            background: #fff;
+            box-shadow: 0 0 2px rgba(59, 130, 246, 0.5);
+        }
+        /* 节点自定义参数样式（支持复杂变量名、上下标、顶标、紧凑布局） */
+        .node-param-container {
+            position: absolute;
+            display: flex;
+            align-items: baseline;
+            font-size: 11px;
+            z-index: 10;
+            background-color: #fdfdfd;
+            border: 1px solid #ccc;
+            border-radius: 2px;
+            padding: 2px 3px;
+            margin: 0;
+            white-space: nowrap;
+            min-height: 18px;
+            box-sizing: border-box;
+            gap: 0;
+        }
+        /* 参数组容器默认隐藏，悬浮或固定时显示 */
+        .node-param-group {
+            display: none;
+            transition: opacity 0.2s ease;
+            z-index: 100; /* 提高z-index，确保在连线和权重之上 */
+            pointer-events: auto;
+        }
+        .node-param-group.visible {
+            display: block;
+        }
+        .node-param-group.pinned {
+            display: block;
+        }
+        .node-param-group.hover-active {
+            display: block;
+        }
+        /* 固定图标样式 */
+        .pin-icon {
+            cursor: pointer;
+            font-size: 12px;
+            color: #9ca3af;
+            margin-left: 4px;
+            transition: color 0.2s ease;
+            user-select: none;
+        }
+        .pin-icon:hover {
+            color: #3b82f6;
+        }
+        .pin-icon.pinned {
+            color: #3b82f6;
+        }
+        /* 折叠图标样式 */
+        .collapse-icon {
+            cursor: pointer;
+            font-size: 12px;
+            color: #9ca3af;
+            margin-left: 4px;
+            transition: color 0.2s, transform 0.2s;
+            user-select: none;
+        }
+        .collapse-icon:hover {
+            color: #3b82f6;
+        }
+        .collapse-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+        /* 参数内容区域 */
+        .param-content {
+            transition: max-height 0.2s ease, opacity 0.2s ease;
+            overflow: hidden;
+        }
+        .param-content.collapsed {
+            max-height: 0 !important;
+            opacity: 0;
+            padding: 0;
+            margin: 0;
+        }
+        /* 节点参数标签（显示在节点上方或下方） */
+        .node-param-label {
+            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            font-size: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #d1d5db;
+            border-radius: 3px;
+            padding: 1px 3px;
+            z-index: 50;
+            white-space: nowrap;
+            pointer-events: auto;
+        }
+        .node-param-label .param-item {
+            display: inline-flex;
+            align-items: baseline;
+        }
+        .node-param-label .param-base {
+            font-style: italic;
+            font-size: 12px;
+        }
+        .node-param-label .param-value-input {
+            width: 28px;
+            height: 14px;
+            font-size: 10px;
+            text-align: center;
+            border: none;
+            border-radius: 2px;
+            background: transparent;
+            outline: none;
+            padding: 0 2px;
+            cursor: text;
+            pointer-events: auto;
+            color: #dc2626;
+        }
+        .node-param-label .param-value-input:focus {
+            background: #fff;
+            box-shadow: 0 0 2px rgba(59, 130, 246, 0.5);
+        }
+        .node-param-label .param-scripts {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            margin-left: 0px;
+            line-height: 1;
+            vertical-align: middle;
+        }
+        .node-param-label .param-sup {
+            font-size: 7px;
+            position: relative;
+            top: -0.8em;
+            left: -0.5em;
+            line-height: 1;
+        }
+        .node-param-label .param-sub {
+            font-size: 7px;
+            position: relative;
+            top: -0.5em;
+            left: -0.5em;
+            line-height: 1;
+        }
+        .node-param-label .param-hat {
+            position: absolute;
+            top: -0.4em;
+            left: 0;
+            font-size: 7px;
+        }
+        .node-param-label .param-value {
+            font-size: 11px;
+        }
+        /* 图标容器 */
+        .title-icons {
+            display: flex;
+            align-items: center;
+        }
+        /* 参数标题容器 - 可拖动 */
+        .param-title-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1px;
+            margin-bottom: 2px;
+            cursor: move;
+            user-select: none;
+        }
+        .param-title-container:active {
+            cursor: grabbing;
+        }
+        .param-title-text {
+            font-size: 9px;
+            color: #6b7280;
+        }
+        /* 变量名展示容器（支持上下标、顶标）- 紧密贴合布局 */
+        .param-display-container {
+            display: inline-flex;
+            align-items: baseline;
+            position: relative;
+            line-height: 1;
+            white-space: nowrap;
+            gap: 0;
+            margin: 0;
+            padding: 0;
+        }
+        .param-base-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin: 0;
+            padding: 0;
+            gap: 0;
+            vertical-align: middle;
+            line-height: 1;
+            height: 1.5em;
+        }
+        .param-base {
+            font-size: 11px;
+            color: #2563eb;
+            position: relative;
+            z-index: 2;
+            display: inline-block;
+            font-weight: normal;
+            margin: 0;
+            padding: 0;
+            vertical-align: middle;
+            line-height: 1;
+        }
+        .param-sup {
+            font-size: 7px;
+            color: #2563eb;
+            position: absolute;
+            top: -1.5em;
+            left: 0;
+            margin: 0;
+            padding: 0;
+            z-index: 3;
+            white-space: nowrap;
+            font-weight: normal;
+            line-height: 1;
+            display: inline-block;
+        }
+        .param-sub {
+            font-size: 7px;
+            color: #2563eb;
+            position: absolute;
+            bottom: -1em;
+            left: 0;
+            margin: 0;
+            padding: 0;
+            z-index: 3;
+            white-space: nowrap;
+            font-weight: normal;
+            line-height: 1;
+            display: inline-block;
+        }
+        .param-hat {
+            font-size: 10px;
+            color: #2563eb;
+            position: absolute;
+            top: 0em;
+            text-align: center;
+            z-index: 1;
+            line-height: 1;
+            margin: 0;
+            padding: 0;
+            vertical-align: middle;
+        }
+        .param-bar {
+            font-size: 10px;
+            color: #2563eb;
+            position: absolute;
+            top: -0.3em;
+            left: 0;
+            right: 0;
+            border-top: 1px solid #2563eb;
+            height: 0;
+            z-index: 1;
+            display: block;
+            margin: 0;
+            padding: 0;
+        }
+        .node-param-equal {
+            margin: 0 1px;
+            color: #64748b;
+        }
+        .node-param-value {
+            width: auto !important;
+            min-width: 30px;
+            max-width: 80px;
+            height: 18px;
+            color: #dc2626;
+            outline: none;
+            border: none;
+            background: transparent;
+            font-size: 11px;
+            padding: 0 2px;
+            margin: 0;
+            box-sizing: content-box;
+        }
+        /* 可视化容器相对定位，用于承载绝对定位的输入框 */
+        .visualization-container {
+            position: relative;
+            display: inline-block;
+            /* 不限制宽度，让内容可以超出 wrapper 产生滚动 */
+        }
+        /* 可视化外层容器，支持滚动 */
+        .visualization-wrapper {
+            max-width: calc(100vw - 420px); /* 限制最大宽度，留出侧边栏空间 */
+            min-width: 600px;
+            max-height: 80vh;
+            overflow: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+        /* 节点参数弹框（支持上下标/顶标独立输入） */
+        .node-param-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 500px; /* 加宽适配上下标输入项 */
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 20px;
+            z-index: 1000;
+            display: none;
+        }
+        .node-param-modal.active {
+            display: block;
+        }
+        .modal-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.3);
+            z-index: 999;
+            display: none;
+        }
+        .modal-mask.active {
+            display: block;
+        }
+        .param-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 0px;
+            flex-wrap: wrap;
+            padding: 0px;
+            border-radius: 4px;
+            background: #f9fafb;
+            transition: background 0.2s;
+        }
+        .param-item:hover {
+            background: #f3f4f6;
+        }
+        .param-item.dragging {
+            opacity: 0.5;
+        }
+        .drag-handle {
+            cursor: grab;
+            color: #9ca3af;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        .param-name-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .param-base-input {
+            width: 40px;
+            height: 18px;
+            font-size: 11px;
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            text-align: center;
+        }
+        .param-sup-input, .param-sub-input {
+            width: 30px;
+            height: 16px;
+            font-size: 9px;
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            text-align: center;
+        }
+        .param-hat-checkbox {
+            width: 16px;
+            height: 16px;
+            margin: 0 2px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .close-modal {
+            cursor: pointer;
+            color: #64748b;
+            font-size: 20px;
+            line-height: 1;
+        }
+        .close-modal:hover {
+            color: #dc2626;
+        }
+        /* 神经元间距配置项样式 */
+        .node-spacing-config {
+            margin: 4px 0 16px 0;
+        }
+        .spacing-input {
+            width: 60px;
+            padding: 2px 4px;
+            font-size: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 2px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">神经网络可视化构建工具（最终优化版）</h1>
+        
+        <!-- 配置面板（可折叠） -->
+        <div class="bg-white rounded-lg shadow-md mb-6">
+            <div class="flex items-center justify-between p-4 cursor-pointer select-none border-b" id="configPanelHeader">
+                <h2 class="text-xl font-semibold text-gray-700">配置面板</h2>
+                <span class="text-gray-500 text-xl transition-transform" id="configPanelToggle">▼</span>
+            </div>
+            <div id="configPanelContent" class="p-6">
+                <!-- 操作控制 -->
+                <div class="mb-4">
+                    <h3 class="text-lg font-medium text-gray-600 mb-2">操作控制</h3>
+                    <div class="flex flex-wrap gap-3">
+                        <button id="addHiddenLayer" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors">
+                            新增隐藏层组（z/a两层）
+                        </button>
+                        <button id="addSingleHiddenLayer" class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors">
+                            新增单层隐藏层
+                        </button>
+                        <button id="toggleAllParams" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition-colors">
+                            隐藏所有参数
+                        </button>
+                        <button id="toggleAllWeights" class="bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded-lg transition-colors">
+                            显示所有权重
+                        </button>
+                        <button id="refreshView" class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-lg transition-colors">
+                            刷新可视化视图
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 各层节点配置 -->
+                <div class="mb-2">
+                    <h3 class="text-sm font-medium text-gray-600 mb-1">各层节点配置</h3>
+                    <div id="layerConfigs" class="space-y-1">
+                        <!-- 输入层（默认不可删除） -->
+                        <div class="layer-item flex items-center justify-between py-1 px-2 border rounded-md bg-gray-50">
+                            <div class="flex items-center text-sm">
+                                <span class="font-medium mr-1">输入层：</span>
+                                <input type="number" class="node-count w-12 p-0.5 border rounded text-center text-sm" value="3" min="1" data-layer-index="0">
+                                <span class="ml-1 text-gray-500">节点</span>
+                            </div>
+                            <span class="text-xs text-gray-400">默认</span>
+                        </div>
+                        
+                        <!-- 输出层（默认不可删除） -->
+                        <div class="layer-item flex items-center justify-between py-1 px-2 border rounded-md bg-gray-50">
+                            <div class="flex items-center text-sm">
+                                <span class="font-medium mr-1">输出层：</span>
+                                <input type="number" class="node-count w-12 p-0.5 border rounded text-center text-sm" value="1" min="1" data-layer-index="1">
+                                <span class="ml-1 text-gray-500">节点</span>
+                            </div>
+                            <span class="text-xs text-gray-400">默认</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 可视化画布区域 -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center">神经网络可视化视图</h2>
+            <div class="flex justify-center">
+                <div class="visualization-wrapper">
+                    <div id="visualizationContainer" class="visualization-container">
+                        <canvas id="neuralNetworkCanvas" width="1200" height="600"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 节点参数弹框（支持上下标/顶标独立输入） -->
+    <div class="modal-mask" id="modalMask"></div>
+    <div class="node-param-modal" id="nodeParamModal">
+        <div class="modal-header">
+            <h3 class="text-lg font-semibold text-gray-700" id="modalTitle">节点自定义参数</h3>
+            <span class="close-modal" id="closeModal">&times;</span>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: stretch;">
+            <div id="paramList" class="mb-4 max-h-60 overflow-y-auto" style="flex: 1;">
+                <div class="text-sm text-gray-500 text-center py-4">该节点无自定义参数，点击新增参数</div>
+            </div>
+            <button id="addNodeParam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm" style="min-width: 40px; padding: 8px 12px; writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 2px;">
+                新增
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量存储神经网络数据（优化隐藏层组逻辑）
+        const neuralNetworkData = {
+            layers: [
+                { type: 'input', nodeCount: 3, isDefault: true, nodes: [], isZLayer: false, isALayer: false }, // 输入层
+                { type: 'output', nodeCount: 1, isDefault: true, nodes: [], isZLayer: false, isALayer: false } // 输出层
+            ],
+            weights: {} // 存储权重 w[layerPairIndex][fromNode][toNode]
+        };
+
+        // 全局变量存储当前选中节点
+        let currentSelectedNode = {
+            layerIndex: -1,
+            nodeIndex: -1
+        };
+
+        // 全局变量存储权重位置（用于防重叠判断）
+        let weightPositions = [];
+        
+        // 全局变量存储节点参数面板的固定状态
+        const pinnedNodes = new Set(); // 存储固定的节点ID: "layerIndex,nodeIndex"
+        
+        // 存储参数面板的自定义位置 { "layerIndex,nodeIndex": { x, y } }
+        const panelPositions = {};
+        
+        // 存储参数面板的折叠状态
+        const collapsedNodes = new Set();
+        
+        // 全局参数显示状态
+        let showAllParamsMode = true;
+        
+        // 当前悬浮的节点
+        let currentHoverNode = null;
+        
+        // 延迟隐藏定时器
+        let hideTimeout = null;
+        
+        // 拖动状态
+        let isDraggingPanel = false;
+        let dragPanel = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        // DOM 元素获取
+        const addHiddenLayerBtn = document.getElementById('addHiddenLayer');
+        const layerConfigs = document.getElementById('layerConfigs');
+        const canvas = document.getElementById('neuralNetworkCanvas');
+        const ctx = canvas.getContext('2d');
+        const visualizationContainer = document.getElementById('visualizationContainer');
+        const paramList = document.getElementById('paramList');
+        const addNodeParamBtn = document.getElementById('addNodeParam');
+        const nodeParamModal = document.getElementById('nodeParamModal');
+        const modalMask = document.getElementById('modalMask');
+        const closeModal = document.getElementById('closeModal');
+        const modalTitle = document.getElementById('modalTitle');
+
+        // 布局参数（自适应紧凑布局，防溢出）
+        const layoutParams = {
+            canvasPadding: 60, // 减小边距
+            nodeRadius: 18, // 稍微减小节点半径
+            layerWidth: 0,
+            verticalSpacingBase: 50, // 减小基础垂直间距
+            baseLayerWidth: 140, // 减小基础层间距，更紧凑
+            minLayerWidth: 100, // 最小层间距
+            minVerticalSpacing: 45, // 最小垂直间距
+            weightPositionRatio: 0.5, // 权重默认显示在连接线的50%位置
+            weightBoxWidth: 60, // 稍微减小权重输入框宽度
+            weightBoxHeight: 18, // 稍微减小权重输入框高度
+            weightOverlapTolerance: 20, // 权重重叠判断阈值
+            paramVerticalGap: 20, // 参数垂直间距
+            paramNodeOffset: 22, // 参数与节点间距
+            hiddenLayerSplitGap: 0.8, // 隐藏层z/a拆分的间距比例
+            // 动态调整参数
+            dynamicLayerWidthMultiplier: 1.0, // 层间距动态倍数
+            dynamicVerticalMultiplier: 1.0, // 垂直间距动态倍数
+        };
+
+        // 初始化页面
+        window.onload = function() {
+            initNodeCustomParams();
+            initEventListeners();
+            // 默认不添加隐藏层，用户需要时自己添加
+            initializeWeights();
+            drawNeuralNetwork();
+        };
+
+        // 初始化节点自定义参数（新增上下标/顶标字段）
+        function initNodeCustomParams() {
+            neuralNetworkData.layers.forEach((layer, layerIndex) => {
+                layer.nodes = [];
+                for (let nodeIndex = 0; nodeIndex < layer.nodeCount; nodeIndex++) {
+                    layer.nodes.push({
+                        customParams: [], // 存储变量名参数：[{ base: 'y', sup: '(1)', sub: '22', hat: false, bar: false, value: '0' }, ...]
+                        nodeIndex: nodeIndex,
+                        layerIndex: layerIndex
+                    });
+                }
+            });
+        }
+
+        // 初始化事件监听器（整合所有新功能）
+        function initEventListeners() {
+            // 0. 配置面板折叠功能
+            const configPanelHeader = document.getElementById('configPanelHeader');
+            const configPanelContent = document.getElementById('configPanelContent');
+            const configPanelToggle = document.getElementById('configPanelToggle');
+            configPanelHeader.addEventListener('click', function() {
+                const isCollapsed = configPanelContent.style.display === 'none';
+                configPanelContent.style.display = isCollapsed ? 'block' : 'none';
+                configPanelToggle.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            
+            // 1. 新增隐藏层组（一次性追加z/a两层，按组编号）
+            addHiddenLayerBtn.addEventListener('click', addHiddenLayerGroup);
+            
+            // 1.1 新增单层隐藏层
+            const addSingleHiddenLayerBtn = document.getElementById('addSingleHiddenLayer');
+            addSingleHiddenLayerBtn.addEventListener('click', addSingleHiddenLayer);
+            
+            // 1.2 显示/隐藏所有参数
+            const toggleAllParamsBtn = document.getElementById('toggleAllParams');
+            toggleAllParamsBtn.addEventListener('click', toggleAllParams);
+            
+            // 1.2.1 显示/隐藏所有权重
+            const toggleAllWeightsBtn = document.getElementById('toggleAllWeights');
+            toggleAllWeightsBtn.addEventListener('click', toggleAllWeights);
+            
+            // 1.3 刷新可视化视图
+            const refreshViewBtn = document.getElementById('refreshView');
+            refreshViewBtn.addEventListener('click', drawNeuralNetwork);
+
+            // 5. 监听节点数输入变化
+            layerConfigs.addEventListener('change', function(e) {
+                if (e.target.classList.contains('node-count')) {
+                    updateLayerNodeCount(e.target);
+                    initNodeCustomParams();
+                    drawNeuralNetwork();
+                }
+            });
+
+            // 6. 监听删除隐藏层事件
+            layerConfigs.addEventListener('click', function(e) {
+                if (e.target.classList.contains('delete-layer')) {
+                    deleteHiddenLayerGroup(e.target);
+                    initNodeCustomParams();
+                    drawNeuralNetwork();
+                } else if (e.target.classList.contains('delete-single-layer')) {
+                    deleteSingleHiddenLayer(e.target);
+                    initNodeCustomParams();
+                    drawNeuralNetwork();
+                }
+            });
+
+            // 7. 点击Canvas识别选中节点
+            canvas.addEventListener('click', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                selectNodeByClick(clickX, clickY);
+            });
+
+            // 8. 关闭弹框事件
+            closeModal.addEventListener('click', closeNodeParamModal);
+            modalMask.addEventListener('click', closeNodeParamModal);
+
+            // 9. 添加节点参数事件（支持上下标/顶标）
+            addNodeParamBtn.addEventListener('click', addNodeParam);
+
+            // 10. 委托处理参数编辑和删除事件（使用 input 事件实现实时更新）
+            paramList.addEventListener('input', function(e) {
+                if (e.target.classList.contains('param-base-input') || 
+                    e.target.classList.contains('param-sup-input') || 
+                    e.target.classList.contains('param-sub-input') ||
+                    e.target.classList.contains('edit-param-value')) {
+                    updateNodeParam(e.target);
+                }
+            });
+            // checkbox 使用 change 事件
+            paramList.addEventListener('change', function(e) {
+                if (e.target.classList.contains('param-hat-checkbox')) {
+                    updateNodeParam(e.target);
+                }
+            });
+            paramList.addEventListener('click', function(e) {
+                if (e.target.classList.contains('delete-param')) {
+                    deleteNodeParam(e.target);
+                }
+            });
+            
+            // 11. 监听Canvas鼠标移动事件（用于悬浮显示参数面板和权重标签）
+            canvas.addEventListener('mousemove', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                handleNodeHover(mouseX, mouseY);
+                handleConnectionHover(mouseX, mouseY);
+            });
+            
+            // 12. 监听Canvas鼠标离开事件
+            canvas.addEventListener('mouseleave', function() {
+                hideHoverParamPanel();
+                hideAllWeightContainers();
+            });
+            
+            // 13. 全局鼠标移动事件 - 处理面板拖动
+            document.addEventListener('mousemove', function(e) {
+                if (!isDraggingPanel || !dragPanel) return;
+                
+                const containerRect = visualizationContainer.getBoundingClientRect();
+                const newX = e.clientX - containerRect.left - dragOffset.x;
+                const newY = e.clientY - containerRect.top - dragOffset.y;
+                
+                dragPanel.style.left = `${newX}px`;
+                dragPanel.style.top = `${newY}px`;
+            });
+            
+            // 14. 全局鼠标松开事件 - 结束拖动并保存位置
+            document.addEventListener('mouseup', function(e) {
+                if (!isDraggingPanel || !dragPanel) return;
+                
+                const nodeId = dragPanel.dataset.nodeId;
+                const containerRect = visualizationContainer.getBoundingClientRect();
+                
+                // 保存位置
+                panelPositions[nodeId] = {
+                    x: e.clientX - containerRect.left - dragOffset.x,
+                    y: e.clientY - containerRect.top - dragOffset.y
+                };
+                
+                isDraggingPanel = false;
+                dragPanel = null;
+            });
+            
+            // 15. 画布拖动功能 - 鼠标左键拖动查看隐藏部分
+            let isCanvasDragging = false;
+            let canvasDragStart = { x: 0, y: 0 };
+            let scrollStart = { x: 0, y: 0 };
+            const visualWrapper = document.querySelector('.visualization-wrapper');
+            
+            visualizationContainer.addEventListener('mousedown', function(e) {
+                // 只响应左键
+                if (e.button !== 0) return;
+                
+                // 如果点击的是输入框，不启用拖动，让输入框正常获得焦点
+                if (e.target.tagName === 'INPUT') return;
+                
+                // 检查是否点击在节点上
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                let clickedOnNode = false;
+                neuralNetworkData.layers.forEach(layer => {
+                    layer.nodes.forEach(node => {
+                        if (node.x && node.y) {
+                            const dx = clickX - node.x;
+                            const dy = clickY - node.y;
+                            if (Math.sqrt(dx * dx + dy * dy) <= layoutParams.nodeRadius) {
+                                clickedOnNode = true;
+                            }
+                        }
+                    });
+                });
+                
+                // 如果点击在节点上，不启用拖动
+                if (clickedOnNode) return;
+                
+                isCanvasDragging = true;
+                canvasDragStart = { x: e.clientX, y: e.clientY };
+                scrollStart = { x: visualWrapper.scrollLeft, y: visualWrapper.scrollTop };
+                document.body.style.cursor = 'grabbing';
+                canvas.style.cursor = 'grabbing';
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            // 使用 document 监听 mousemove，这样鼠标移出 canvas 也能继续拖动
+            document.addEventListener('mousemove', function(e) {
+                if (!isCanvasDragging) return;
+                
+                const dx = e.clientX - canvasDragStart.x;
+                const dy = e.clientY - canvasDragStart.y;
+                
+                visualWrapper.scrollLeft = scrollStart.x - dx;
+                visualWrapper.scrollTop = scrollStart.y - dy;
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mouseup', function() {
+                if (isCanvasDragging) {
+                    isCanvasDragging = false;
+                    document.body.style.cursor = '';
+                    canvas.style.cursor = 'grab';
+                }
+            });
+        }
+
+        // 点击Canvas识别选中节点
+        function selectNodeByClick(clickX, clickY) {
+            const layers = neuralNetworkData.layers;
+            let selected = false;
+
+            layers.forEach((layer, layerIndex) => {
+                if (selected) return;
+                const node = layer.nodes.find((n, nodeIndex) => {
+                    if (!n.x || !n.y) return false;
+                    const dx = clickX - n.x;
+                    const dy = clickY - n.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    return distance <= layoutParams.nodeRadius;
+                });
+                
+                if (node) {
+                    const nodeIndex = layer.nodes.indexOf(node);
+                    currentSelectedNode = {
+                        layerIndex: layerIndex,
+                        nodeIndex: nodeIndex
+                    };
+                    // 生成层名称
+                    let layerName = '';
+                    if (layer.type === 'input') {
+                        layerName = '输入层';
+                    } else if (layer.type === 'output') {
+                        layerName = '输出层';
+                    } else if (layer.isZLayer) {
+                        const groupIndex = layer.groupIndex || Math.floor((layerIndex - 1) / 2) + 1;
+                        layerName = `隐藏层 ${groupIndex}-z`;
+                    } else if (layer.isALayer) {
+                        const groupIndex = layer.groupIndex || Math.floor((layerIndex - 1) / 2) + 1;
+                        layerName = `隐藏层 ${groupIndex}-a`;
+                    } else if (layer.isSingleLayer) {
+                        layerName = `隐藏层 ${layer.singleLayerIndex}`;
+                    }
+                    modalTitle.textContent = `${layerName} - 节点 ${nodeIndex + 1} 自定义参数`;
+                    renderNodeParamList();
+                    openNodeParamModal();
+                    selected = true;
+                }
+            });
+        }
+        
+        // 处理节点悬浮事件
+        function handleNodeHover(mouseX, mouseY) {
+            const layers = neuralNetworkData.layers;
+            let foundNode = null;
+            
+            layers.forEach((layer, layerIndex) => {
+                if (foundNode) return;
+                layer.nodes.forEach((node, nodeIndex) => {
+                    if (foundNode) return;
+                    if (!node.x || !node.y) return;
+                    const dx = mouseX - node.x;
+                    const dy = mouseY - node.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance <= layoutParams.nodeRadius) {
+                        foundNode = { layerIndex, nodeIndex };
+                    }
+                });
+            });
+            
+            if (foundNode) {
+                const nodeId = `${foundNode.layerIndex},${foundNode.nodeIndex}`;
+                // 清除隐藏定时器
+                if (hideTimeout) {
+                    clearTimeout(hideTimeout);
+                    hideTimeout = null;
+                }
+                if (currentHoverNode !== nodeId) {
+                    // 隐藏之前悬浮的节点参数面板（如果没有固定）
+                    hideHoverParamPanelImmediate();
+                    currentHoverNode = nodeId;
+                    showNodeParamPanel(foundNode.layerIndex, foundNode.nodeIndex);
+                }
+            } else {
+                // 延迟隐藏，给用户时间移动到参数面板上
+                scheduleHideParamPanel();
+            }
+        }
+        
+        // 显示节点参数面板
+        function showNodeParamPanel(layerIndex, nodeIndex) {
+            const nodeId = `${layerIndex},${nodeIndex}`;
+            const panel = visualizationContainer.querySelector(`.node-param-group[data-node-id="${nodeId}"]`);
+            if (panel && !panel.classList.contains('pinned')) {
+                panel.classList.add('visible');
+            }
+        }
+        
+        // 延迟隐藏参数面板
+        function scheduleHideParamPanel() {
+            if (hideTimeout) {
+                clearTimeout(hideTimeout);
+            }
+            hideTimeout = setTimeout(() => {
+                hideHoverParamPanelImmediate();
+                hideTimeout = null;
+            }, 200); // 200ms 延迟，给用户足够时间移动到面板上
+        }
+        
+        // 立即隐藏悬浮的参数面板（不影响固定的面板和正在悬浮的面板）
+        function hideHoverParamPanelImmediate() {
+            if (currentHoverNode) {
+                const panel = visualizationContainer.querySelector(`.node-param-group[data-node-id="${currentHoverNode}"]`);
+                if (panel && !panel.classList.contains('pinned') && !panel.classList.contains('hover-active')) {
+                    panel.classList.remove('visible');
+                }
+                currentHoverNode = null;
+            }
+        }
+        
+        // 隐藏悬浮的参数面板（带延迟）
+        function hideHoverParamPanel() {
+            scheduleHideParamPanel();
+        }
+        
+        // 存储所有连接线信息（用于悬浮检测）
+        let connectionLines = [];
+        
+        // 处理连接线悬浮事件
+        function handleConnectionHover(mouseX, mouseY) {
+            // 如果已开启显示所有权重模式，不处理悬浮
+            if (showAllWeightsMode) return;
+            
+            const threshold = 8; // 鼠标距离连接线的阈值（像素）
+            let foundConnection = null;
+            
+            connectionLines.forEach(conn => {
+                if (foundConnection) return;
+                const dist = pointToLineDistance(mouseX, mouseY, conn.prevPos.x, conn.prevPos.y, conn.currentPos.x, conn.currentPos.y);
+                if (dist <= threshold) {
+                    foundConnection = conn;
+                }
+            });
+            
+            // 隐藏所有权重容器
+            hideAllWeightContainers();
+            
+            // 显示悬浮的连接线对应的权重容器
+            if (foundConnection) {
+                const containerId = `${foundConnection.layerPairIndex},${foundConnection.fromNode},${foundConnection.toNode}`;
+                const container = visualizationContainer.querySelector(`.weight-container[data-id="${containerId}"]`);
+                if (container) {
+                    container.classList.add('visible');
+                }
+            }
+        }
+        
+        // 计算点到线段的距离
+        function pointToLineDistance(px, py, x1, y1, x2, y2) {
+            const A = px - x1;
+            const B = py - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+            
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            
+            if (lenSq !== 0) {
+                param = dot / lenSq;
+            }
+            
+            let xx, yy;
+            
+            if (param < 0) {
+                xx = x1;
+                yy = y1;
+            } else if (param > 1) {
+                xx = x2;
+                yy = y2;
+            } else {
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }
+            
+            const dx = px - xx;
+            const dy = py - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        // 隐藏所有权重容器
+        function hideAllWeightContainers() {
+            // 如果已开启显示所有权重模式，不隐藏
+            if (showAllWeightsMode) return;
+            
+            const containers = visualizationContainer.querySelectorAll('.weight-container');
+            containers.forEach(container => {
+                container.classList.remove('visible');
+            });
+        }
+        
+        // 切换节点参数面板的固定状态
+        function togglePinNode(layerIndex, nodeIndex) {
+            const nodeId = `${layerIndex},${nodeIndex}`;
+            const panel = visualizationContainer.querySelector(`.node-param-group[data-node-id="${nodeId}"]`);
+            const pinIcon = panel ? panel.querySelector('.pin-icon') : null;
+            
+            if (pinnedNodes.has(nodeId)) {
+                pinnedNodes.delete(nodeId);
+                if (panel) {
+                    panel.classList.remove('pinned');
+                    panel.classList.remove('visible');
+                }
+                if (pinIcon) {
+                    pinIcon.classList.remove('pinned');
+                    pinIcon.textContent = '📌';
+                }
+            } else {
+                pinnedNodes.add(nodeId);
+                if (panel) {
+                    panel.classList.add('pinned');
+                }
+                if (pinIcon) {
+                    pinIcon.classList.add('pinned');
+                    pinIcon.textContent = '📍';
+                }
+            }
+        }
+
+        // 打开节点参数弹框
+        function openNodeParamModal() {
+            nodeParamModal.classList.add('active');
+            modalMask.classList.add('active');
+        }
+
+        // 关闭节点参数弹框
+        function closeNodeParamModal() {
+            nodeParamModal.classList.remove('active');
+            modalMask.classList.remove('active');
+            currentSelectedNode = {
+                layerIndex: -1,
+                nodeIndex: -1
+            };
+            // 关闭弹框时重新渲染视图和参数列表
+            drawNeuralNetwork();
+        }
+
+        // 新增隐藏层组（一次性追加z/a两层，严格按组编号：隐藏层1-z/a、隐藏层2-z/a...）
+        function addHiddenLayerGroup() {
+            // 计算当前所有隐藏层的最大编号（单层和隐藏层组共用编号序列）
+            let maxHiddenIndex = 0;
+            neuralNetworkData.layers.forEach(layer => {
+                if (layer.type === 'hidden' && !layer.isDefault) {
+                    if (layer.isSingleLayer && layer.singleLayerIndex > maxHiddenIndex) {
+                        maxHiddenIndex = layer.singleLayerIndex;
+                    } else if (layer.groupIndex && layer.groupIndex > maxHiddenIndex) {
+                        maxHiddenIndex = layer.groupIndex;
+                    }
+                }
+            });
+            const newGroupIndex = maxHiddenIndex + 1;
+            const insertIndex = neuralNetworkData.layers.length - 1; // 插入到输出层前
+
+            // 1. 创建z层（虚线节点，隐藏层newGroupIndex-z）
+            const hiddenLayerZ = {
+                type: 'hidden',
+                nodeCount: 2,
+                isDefault: false,
+                nodes: [],
+                isZLayer: true,
+                isALayer: false,
+                groupIndex: newGroupIndex
+            };
+            // 初始化z层节点参数
+            for (let nodeIndex = 0; nodeIndex < hiddenLayerZ.nodeCount; nodeIndex++) {
+                hiddenLayerZ.nodes.push({
+                    customParams: [],
+                    nodeIndex: nodeIndex,
+                    layerIndex: insertIndex
+                });
+            }
+
+            // 2. 创建a层（实线节点，隐藏层newGroupIndex-a）
+            const hiddenLayerA = {
+                type: 'hidden',
+                nodeCount: 2,
+                isDefault: false,
+                nodes: [],
+                isZLayer: false,
+                isALayer: true,
+                groupIndex: newGroupIndex
+            };
+            // 初始化a层节点参数
+            for (let nodeIndex = 0; nodeIndex < hiddenLayerA.nodeCount; nodeIndex++) {
+                hiddenLayerA.nodes.push({
+                    customParams: [],
+                    nodeIndex: nodeIndex,
+                    layerIndex: insertIndex + 1
+                });
+            }
+
+            // 3. 一次性插入z/a两层（按组插入，保证编号连续）
+            neuralNetworkData.layers.splice(insertIndex, 0, hiddenLayerZ, hiddenLayerA);
+            renderLayerConfigs();
+            initializeWeights();
+            drawNeuralNetwork();
+        }
+        
+        // 新增单层隐藏层
+        function addSingleHiddenLayer() {
+            // 计算当前所有隐藏层的最大编号（单层和隐藏层组共用编号序列）
+            let maxHiddenIndex = 0;
+            neuralNetworkData.layers.forEach(layer => {
+                if (layer.type === 'hidden' && !layer.isDefault) {
+                    if (layer.isSingleLayer && layer.singleLayerIndex > maxHiddenIndex) {
+                        maxHiddenIndex = layer.singleLayerIndex;
+                    } else if (layer.groupIndex && layer.groupIndex > maxHiddenIndex) {
+                        maxHiddenIndex = layer.groupIndex;
+                    }
+                }
+            });
+            const newSingleIndex = maxHiddenIndex + 1;
+            const insertIndex = neuralNetworkData.layers.length - 1; // 插入到输出层前
+
+            // 创建单层隐藏层
+            const singleHiddenLayer = {
+                type: 'hidden',
+                nodeCount: 2,
+                isDefault: false,
+                nodes: [],
+                isZLayer: false,
+                isALayer: false,
+                isSingleLayer: true,
+                singleLayerIndex: newSingleIndex
+            };
+            
+            // 初始化节点参数
+            for (let nodeIndex = 0; nodeIndex < singleHiddenLayer.nodeCount; nodeIndex++) {
+                singleHiddenLayer.nodes.push({
+                    customParams: [],
+                    nodeIndex: nodeIndex,
+                    layerIndex: insertIndex
+                });
+            }
+
+            neuralNetworkData.layers.splice(insertIndex, 0, singleHiddenLayer);
+            renderLayerConfigs();
+            initializeWeights();
+            drawNeuralNetwork();
+        }
+
+        // 渲染各层配置DOM
+        function renderLayerConfigs() {
+            const inputLayerDom = layerConfigs.children[0];
+            const outputLayerDom = layerConfigs.children[layerConfigs.children.length - 1];
+            layerConfigs.innerHTML = '';
+            layerConfigs.appendChild(inputLayerDom);
+
+            // 查找所有隐藏层组和单层隐藏层
+            const hiddenGroups = {};
+            const singleLayers = [];
+            
+            neuralNetworkData.layers.forEach((layer, idx) => {
+                if (layer.type === 'hidden' && !layer.isDefault) {
+                    if (layer.isSingleLayer) {
+                        singleLayers.push({ layer, idx });
+                    } else {
+                        const groupIndex = layer.groupIndex;
+                        if (!hiddenGroups[groupIndex]) {
+                            hiddenGroups[groupIndex] = { zLayer: null, aLayer: null };
+                        }
+                        if (layer.isZLayer) {
+                            hiddenGroups[groupIndex].zLayer = layer;
+                        } else if (layer.isALayer) {
+                            hiddenGroups[groupIndex].aLayer = layer;
+                        }
+                    }
+                }
+            });
+
+            // 按组编号正序渲染隐藏层组
+            const sortedGroupIndexes = Object.keys(hiddenGroups).sort((a, b) => a - b);
+            sortedGroupIndexes.forEach(groupIndex => {
+                const group = hiddenGroups[groupIndex];
+                if (group.zLayer && group.aLayer) {
+                    const layerDom = document.createElement('div');
+                    layerDom.className = 'layer-item flex items-center justify-between py-1 px-2 border rounded-md bg-blue-50';
+                    const zLayerIndex = neuralNetworkData.layers.findIndex(l => l === group.zLayer);
+                    layerDom.innerHTML = `
+                        <div class="flex items-center text-sm">
+                            <span class="font-medium mr-1 text-blue-700">隐藏层组${groupIndex}：</span>
+                            <input type="number" class="node-count w-12 p-0.5 border rounded text-center text-sm" value="${group.zLayer.nodeCount}" min="1" data-layer-index="${zLayerIndex}" data-group-index="${groupIndex}">
+                            <span class="ml-1 text-gray-500">节点</span>
+                        </div>
+                        <button class="delete-layer bg-red-500 hover:bg-red-600 text-white py-0.5 px-2 rounded text-xs transition-colors">
+                            删除
+                        </button>
+                    `;
+                    layerDom.querySelector('.delete-layer').dataset.groupIndex = groupIndex;
+                    layerConfigs.appendChild(layerDom);
+
+                    // 同步a层节点数（与z层保持一致）
+                    group.aLayer.nodeCount = group.zLayer.nodeCount;
+                }
+            });
+            
+            // 渲染单层隐藏层
+            singleLayers.forEach(({ layer, idx }) => {
+                const layerDom = document.createElement('div');
+                layerDom.className = 'layer-item flex items-center justify-between py-1 px-2 border rounded-md bg-green-50';
+                const layerIndex = neuralNetworkData.layers.findIndex(l => l === layer);
+                layerDom.innerHTML = `
+                    <div class="flex items-center text-sm">
+                        <span class="font-medium mr-1 text-green-700">单层${layer.singleLayerIndex}：</span>
+                        <input type="number" class="node-count w-12 p-0.5 border rounded text-center text-sm" value="${layer.nodeCount}" min="1" data-layer-index="${layerIndex}" data-single-index="${layer.singleLayerIndex}">
+                        <span class="ml-1 text-gray-500">节点</span>
+                    </div>
+                    <button class="delete-single-layer bg-red-500 hover:bg-red-600 text-white py-0.5 px-2 rounded text-xs transition-colors" data-layer-index="${layerIndex}">
+                        删除
+                    </button>
+                `;
+                layerConfigs.appendChild(layerDom);
+            });
+
+            layerConfigs.appendChild(outputLayerDom);
+            // 确保默认层的data-layer-index正确
+            inputLayerDom.querySelector('.node-count').setAttribute('data-layer-index', 0);
+            outputLayerDom.querySelector('.node-count').setAttribute('data-layer-index', neuralNetworkData.layers.length - 1);
+        }
+
+        // 删除单层隐藏层
+        function deleteSingleHiddenLayer(deleteBtn) {
+            const layerIndex = parseInt(deleteBtn.getAttribute('data-layer-index'));
+            if (layerIndex > 0 && layerIndex < neuralNetworkData.layers.length - 1) {
+                neuralNetworkData.layers.splice(layerIndex, 1);
+                
+                // 重新整理单层隐藏层的编号
+                let singleIndex = 1;
+                neuralNetworkData.layers.forEach(layer => {
+                    if (layer.isSingleLayer) {
+                        layer.singleLayerIndex = singleIndex++;
+                    }
+                });
+                
+                renderLayerConfigs();
+                initializeWeights();
+            }
+        }
+
+        // 更新层节点数（z/a层同步更新，简化逻辑）
+        function updateLayerNodeCount(inputElement) {
+            const layerIndex = parseInt(inputElement.getAttribute('data-layer-index'));
+            const groupIndex = inputElement.getAttribute('data-group-index');
+            const newNodeCount = Math.max(1, parseInt(inputElement.value) || 1);
+
+            if (neuralNetworkData.layers[layerIndex]) {
+                // 更新当前层节点数
+                neuralNetworkData.layers[layerIndex].nodeCount = newNodeCount;
+                // 同步对应分组的另一层（z/a层）
+                if (groupIndex) {
+                    const groupLayers = neuralNetworkData.layers.filter(layer => layer.groupIndex == groupIndex);
+                    groupLayers.forEach(layer => {
+                        layer.nodeCount = newNodeCount;
+                    });
+                }
+                initializeWeights();
+            }
+        }
+
+        // 删除隐藏层组（一次性删除z/a两层，保持组编号连续）
+        function deleteHiddenLayerGroup(deleteBtn) {
+            const groupIndex = deleteBtn.getAttribute('data-group-index');
+            // 找到该组的所有层并删除
+            const groupLayerIndexes = neuralNetworkData.layers
+                .map((layer, index) => ({ layer, index }))
+                .filter(item => item.layer.groupIndex == groupIndex)
+                .map(item => item.index)
+                .sort((a, b) => b - a); // 倒序删除避免索引错乱
+
+            // 删除该组z/a两层
+            groupLayerIndexes.forEach(index => {
+                neuralNetworkData.layers.splice(index, 1);
+            });
+
+            // 重新整理剩余隐藏层组的编号（保证连续）
+            const remainingHiddenGroups = {};
+            neuralNetworkData.layers.forEach(layer => {
+                if (layer.type === 'hidden' && !layer.isDefault) {
+                    remainingHiddenGroups[layer.groupIndex] = true;
+                }
+            });
+            const sortedRemainingGroups = Object.keys(remainingHiddenGroups).sort((a, b) => a - b);
+            sortedRemainingGroups.forEach((oldGroupIndex, newGroupIndex) => {
+                neuralNetworkData.layers.forEach(layer => {
+                    if (layer.groupIndex == oldGroupIndex) {
+                        layer.groupIndex = newGroupIndex + 1;
+                    }
+                });
+            });
+
+            renderLayerConfigs();
+            initializeWeights();
+        }
+
+        // 初始化权重
+        function initializeWeights() {
+            const layers = neuralNetworkData.layers;
+            neuralNetworkData.weights = {};
+
+            for (let layerPairIndex = 0; layerPairIndex < layers.length - 1; layerPairIndex++) {
+                const prevLayer = layers[layerPairIndex];
+                const currentLayer = layers[layerPairIndex + 1];
+                neuralNetworkData.weights[layerPairIndex] = [];
+
+                // 判断是否是z/a层（仅1:1连接）
+                const isZALayerPair = prevLayer.isZLayer && currentLayer.isALayer;
+
+                for (let fromNode = 0; fromNode < prevLayer.nodeCount; fromNode++) {
+                    neuralNetworkData.weights[layerPairIndex][fromNode] = [];
+                    // z/a层仅1:1连接，其他层笛卡尔积
+                    const toNodeRange = isZALayerPair ? [fromNode] : Array.from({length: currentLayer.nodeCount}, (_, i) => i);
+                    
+                    toNodeRange.forEach(toNode => {
+                        neuralNetworkData.weights[layerPairIndex][fromNode][toNode] = 1; // 默认权重为1
+                    });
+                }
+            }
+            updateEditableInputs();
+        }
+
+        // 清空所有可编辑输入框
+        function clearEditableInputs() {
+            weightPositions = []; // 重置权重位置记录
+            const allInputs = visualizationContainer.querySelectorAll('.weight-container, .node-param-container, .node-param-group');
+            allInputs.forEach(input => input.remove());
+        }
+
+        // 更新可编辑输入框的值
+        function updateEditableInputs() {
+            const weightContainers = visualizationContainer.querySelectorAll('.weight-container');
+            weightContainers.forEach(container => {
+                const [layerPairIndex, fromNode, toNode] = container.dataset.id.split(',').map(Number);
+                // 安全检查：确保权重数组存在
+                if (neuralNetworkData.weights[layerPairIndex] && 
+                    neuralNetworkData.weights[layerPairIndex][fromNode] && 
+                    neuralNetworkData.weights[layerPairIndex][fromNode][toNode] !== undefined) {
+                    const weightValue = neuralNetworkData.weights[layerPairIndex][fromNode][toNode] || 0;
+                    const input = container.querySelector('.weight-input');
+                    if (input) input.value = weightValue;
+                }
+            });
+        }
+
+        // 渲染节点参数列表（支持基础名+上标+下标+顶标）
+        function renderNodeParamList() {
+            const { layerIndex, nodeIndex } = currentSelectedNode;
+            if (layerIndex === -1 || nodeIndex === -1) {
+                paramList.innerHTML = '<div class="text-sm text-gray-500 text-center py-4">该节点无自定义参数，点击新增参数</div>';
+                return;
+            }
+            if (!neuralNetworkData.layers[layerIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex]) {
+                paramList.innerHTML = '<div class="text-sm text-gray-500 text-center py-4">该节点不存在</div>';
+                return;
+            }
+            const node = neuralNetworkData.layers[layerIndex].nodes[nodeIndex];
+            if (!node.customParams || node.customParams.length === 0) {
+                paramList.innerHTML = '<div class="text-sm text-gray-500 text-center py-4">该节点无自定义参数，点击新增参数</div>';
+                return;
+            }
+            paramList.innerHTML = '';
+            node.customParams.forEach((param, paramIndex) => {
+                const paramItem = document.createElement('div');
+                paramItem.className = 'param-item';
+                paramItem.draggable = true;
+                paramItem.dataset.paramIndex = paramIndex;
+                paramItem.innerHTML = `
+                    <span class="drag-handle" style="cursor: grab; margin-right: 6px; color: #9ca3af;">⋮⋮</span>
+                    <div class="param-name-group" style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
+                        <input type="text" class="param-base-input" value="${param.base || 'y'}" data-param-index="${paramIndex}" placeholder="基础名" style="width: 35px;">
+                        <input type="text" class="param-sup-input" value="${param.sup || ''}" data-param-index="${paramIndex}" placeholder="上标" style="width: 25px;">
+                        <input type="text" class="param-sub-input" value="${param.sub || ''}" data-param-index="${paramIndex}" placeholder="下标" style="width: 25px;">
+                        <label class="flex items-center" style="white-space: nowrap;">
+                            <input type="checkbox" class="param-hat-checkbox" data-param-index="${paramIndex}" ${param.hat ? 'checked' : ''}>
+                            <span class="text-xs ml-1">hat</span>
+                        </label>
+                    </div>
+                    <span class="node-param-equal">=</span>
+                    <input type="text" class="edit-param-value" value="${param.value}" data-param-index="${paramIndex}" style="width: 80px;">
+                    <button class="delete-param bg-red-500 hover:bg-red-600 text-white py-1 px-2 rounded-lg text-xs" data-param-index="${paramIndex}">删除</button>
+                `;
+                
+                // 拖动排序事件
+                paramItem.addEventListener('dragstart', function(e) {
+                    e.dataTransfer.setData('text/plain', paramIndex);
+                    this.style.opacity = '0.5';
+                });
+                paramItem.addEventListener('dragend', function() {
+                    this.style.opacity = '1';
+                });
+                paramItem.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    this.style.borderTop = '2px solid #3b82f6';
+                });
+                paramItem.addEventListener('dragleave', function() {
+                    this.style.borderTop = '';
+                });
+                paramItem.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    this.style.borderTop = '';
+                    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                    const toIndex = parseInt(this.dataset.paramIndex);
+                    if (fromIndex !== toIndex) {
+                        reorderParams(fromIndex, toIndex);
+                    }
+                });
+                
+                paramList.appendChild(paramItem);
+            });
+        }
+
+        // 新增节点参数（支持基础名+上标+下标+顶标）
+        function addNodeParam() {
+            const { layerIndex, nodeIndex } = currentSelectedNode;
+            if (layerIndex === -1 || nodeIndex === -1) {
+                alert('请先点击选择一个节点！');
+                return;
+            }
+            if (!neuralNetworkData.layers[layerIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex]) {
+                alert('所选节点不存在！');
+                return;
+            }
+            const layer = neuralNetworkData.layers[layerIndex];
+            const node = layer.nodes[nodeIndex];
+            
+            // 计算逻辑层编号（上标）
+            let logicalLayerIndex = '';
+            if (layer.type === 'input') {
+                logicalLayerIndex = '0';
+            } else if (layer.type === 'output') {
+                // 输出层的逻辑层编号 = 最后一个隐藏层编号 + 1
+                let maxHiddenIndex = 0;
+                neuralNetworkData.layers.forEach(l => {
+                    if (l.type === 'hidden' && !l.isDefault) {
+                        if (l.isSingleLayer && l.singleLayerIndex > maxHiddenIndex) {
+                            maxHiddenIndex = l.singleLayerIndex;
+                        } else if (l.groupIndex && l.groupIndex > maxHiddenIndex) {
+                            maxHiddenIndex = l.groupIndex;
+                        }
+                    }
+                });
+                logicalLayerIndex = String(maxHiddenIndex + 1);
+            } else if (layer.isZLayer || layer.isALayer) {
+                logicalLayerIndex = String(layer.groupIndex);
+            } else if (layer.isSingleLayer) {
+                logicalLayerIndex = String(layer.singleLayerIndex);
+            }
+            
+            // 下标为节点在当前层的位置（从1开始）
+            const nodePosition = String(nodeIndex + 1);
+            
+            node.customParams.push({
+                base: 'b',
+                sup: logicalLayerIndex,
+                sub: nodePosition,
+                hat: false,
+                value: '0'
+            });
+            renderNodeParamList();
+            // drawNeuralNetwork(); // 移除自动重新渲染，在关闭弹框时再渲染
+        }
+        
+        // 重新排序参数
+        function reorderParams(fromIndex, toIndex) {
+            const { layerIndex, nodeIndex } = currentSelectedNode;
+            if (layerIndex === -1 || nodeIndex === -1) return;
+            const node = neuralNetworkData.layers[layerIndex].nodes[nodeIndex];
+            if (!node.customParams) return;
+            
+            const params = node.customParams;
+            const [movedParam] = params.splice(fromIndex, 1);
+            params.splice(toIndex, 0, movedParam);
+            renderNodeParamList();
+        }
+
+        // 更新节点参数（支持基础名+上标+下标+顶标）
+        function updateNodeParam(inputElement) {
+            const { layerIndex, nodeIndex } = currentSelectedNode;
+            if (layerIndex === -1 || nodeIndex === -1) return;
+            const paramIndex = parseInt(inputElement.dataset.paramIndex);
+            if (!neuralNetworkData.layers[layerIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex].customParams[paramIndex]) {
+                return;
+            }
+            const node = neuralNetworkData.layers[layerIndex].nodes[nodeIndex];
+            const param = node.customParams[paramIndex];
+            
+            if (inputElement.classList.contains('param-base-input')) {
+                param.base = inputElement.value || 'y';
+            } else if (inputElement.classList.contains('param-sup-input')) {
+                param.sup = inputElement.value;
+            } else if (inputElement.classList.contains('param-sub-input')) {
+                param.sub = inputElement.value;
+            } else if (inputElement.classList.contains('param-hat-checkbox')) {
+                param.hat = inputElement.checked;
+            } else if (inputElement.classList.contains('edit-param-value')) {
+                // 实时更新时不格式化，保持用户输入
+                param.value = inputElement.value;
+                // 同步更新参数标签和参数弹窗中的输入框（不重建）
+                syncParamValueToLabel(layerIndex, nodeIndex, paramIndex, inputElement.value);
+                syncParamValueToPopup(layerIndex, nodeIndex, paramIndex, inputElement.value);
+                return; // 值修改不需要重建标签
+            }
+            // 其他属性修改需要更新参数标签（重建）
+            updateParamLabels();
+        }
+        
+        // 同步参数值到弹窗（自定义参数弹窗 + 参数弹窗）
+        function syncParamValueToPopup(layerIndex, nodeIndex, paramIndex, value) {
+            // 更新自定义参数弹窗中的输入框
+            const paramList = document.getElementById('nodeParamList');
+            if (paramList) {
+                const valueInputs = paramList.querySelectorAll('.edit-param-value');
+                valueInputs.forEach(input => {
+                    if (parseInt(input.dataset.paramIndex) === paramIndex) {
+                        if (document.activeElement !== input) {
+                            input.value = value;
+                        }
+                    }
+                });
+            }
+            
+            // 更新参数弹窗（node-param-group）中的输入框
+            const nodeId = `${layerIndex},${nodeIndex}`;
+            const paramGroup = visualizationContainer.querySelector(`.node-param-group[data-node-id="${nodeId}"]`);
+            if (paramGroup) {
+                const containers = paramGroup.querySelectorAll('.node-param-container');
+                containers.forEach(container => {
+                    const id = container.dataset.id;
+                    if (id === `${layerIndex},${nodeIndex},${paramIndex}`) {
+                        const input = container.querySelector('.edit-param-value');
+                        if (input && document.activeElement !== input) {
+                            input.value = value;
+                        }
+                    }
+                });
+            }
+        }
+        
+        // 同步参数值到标签
+        function syncParamValueToLabel(layerIndex, nodeIndex, paramIndex, value) {
+            // 更新参数标签中的输入框
+            const labels = document.querySelectorAll('.node-param-label');
+            labels.forEach(label => {
+                const inputs = label.querySelectorAll('.param-value-input');
+                inputs.forEach(input => {
+                    if (parseInt(input.dataset.layerIndex) === layerIndex &&
+                        parseInt(input.dataset.nodeIndex) === nodeIndex &&
+                        parseInt(input.dataset.paramIndex) === paramIndex) {
+                        if (document.activeElement !== input) {
+                            input.value = value;
+                        }
+                    }
+                });
+            });
+        }
+
+        // 删除节点参数
+        function deleteNodeParam(deleteBtn) {
+            const { layerIndex, nodeIndex } = currentSelectedNode;
+            if (layerIndex === -1 || nodeIndex === -1) return;
+            const paramItem = deleteBtn.closest('.param-item');
+            if (!paramItem) return;
+            const paramIndex = parseInt(paramItem.querySelector('.param-base-input').dataset.paramIndex);
+            if (!neuralNetworkData.layers[layerIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex] || !neuralNetworkData.layers[layerIndex].nodes[nodeIndex].customParams[paramIndex]) {
+                return;
+            }
+            const node = neuralNetworkData.layers[layerIndex].nodes[nodeIndex];
+            node.customParams.splice(paramIndex, 1);
+            renderNodeParamList(); // 删除后需要重新渲染参数列表
+            // drawNeuralNetwork(); // 移除自动重新渲染，在关闭弹框时再渲染
+        }
+
+        // 检查权重位置是否与已有权重重叠
+        function checkWeightOverlap(x, y, boxWidth, boxHeight, angle) {
+            // 考虑旋转后的边界框
+            const cos = Math.abs(Math.cos(angle));
+            const sin = Math.abs(Math.sin(angle));
+            const effectiveWidth = boxWidth * cos + boxHeight * sin;
+            const effectiveHeight = boxWidth * sin + boxHeight * cos;
+            
+            for (let i = 0; i < weightPositions.length; i++) {
+                const pos = weightPositions[i];
+                // 使用矩形碰撞检测
+                const dx = Math.abs(x - pos.x);
+                const dy = Math.abs(y - pos.y);
+                const minDistX = (effectiveWidth + pos.width) / 2;
+                const minDistY = (effectiveHeight + pos.height) / 2;
+                
+                if (dx < minDistX && dy < minDistY) {
+                    return true; // 存在重叠
+                }
+            }
+            return false; // 无重叠
+        }
+
+        // 沿连接线滑动寻找不重叠的位置
+        function findNonOverlappingPosition(prevPos, currentPos, initialT, boxWidth, boxHeight) {
+            const dx = currentPos.x - prevPos.x;
+            const dy = currentPos.y - prevPos.y;
+            const lineLength = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+            
+            // 计算有效的t范围（留出边距，避免权重超出连接线）
+            const margin = (boxWidth / 2 + 10) / lineLength; // 权重框半宽 + 边距
+            const minT = Math.max(0.15, margin);
+            const maxT = Math.min(0.85, 1 - margin);
+            
+            // 从初始位置开始，向两侧搜索
+            const searchStep = 0.05;
+            let bestT = initialT;
+            let found = false;
+            
+            // 先检查初始位置
+            let testX = prevPos.x + dx * initialT;
+            let testY = prevPos.y + dy * initialT;
+            if (!checkWeightOverlap(testX, testY, boxWidth, boxHeight, angle)) {
+                return { t: initialT, x: testX, y: testY, needsExpand: false };
+            }
+            
+            // 交替向两侧搜索
+            for (let offset = searchStep; offset <= 0.5; offset += searchStep) {
+                // 向后搜索
+                let t1 = initialT - offset;
+                if (t1 >= minT) {
+                    testX = prevPos.x + dx * t1;
+                    testY = prevPos.y + dy * t1;
+                    if (!checkWeightOverlap(testX, testY, boxWidth, boxHeight, angle)) {
+                        return { t: t1, x: testX, y: testY, needsExpand: false };
+                    }
+                }
+                
+                // 向前搜索
+                let t2 = initialT + offset;
+                if (t2 <= maxT) {
+                    testX = prevPos.x + dx * t2;
+                    testY = prevPos.y + dy * t2;
+                    if (!checkWeightOverlap(testX, testY, boxWidth, boxHeight, angle)) {
+                        return { t: t2, x: testX, y: testY, needsExpand: false };
+                    }
+                }
+            }
+            
+            // 如果在连接线上找不到位置，返回需要扩展的标记
+            testX = prevPos.x + dx * initialT;
+            testY = prevPos.y + dy * initialT;
+            return { t: initialT, x: testX, y: testY, needsExpand: true };
+        }
+
+        // 动态调整权重位置（沿连接线滑动，防重叠）
+        function adjustWeightPosition(prevPos, currentPos, tRatio) {
+            const dx = currentPos.x - prevPos.x;
+            const dy = currentPos.y - prevPos.y;
+            const angle = Math.atan2(dy, dx);
+            
+            const boxWidth = layoutParams.weightBoxWidth;
+            const boxHeight = layoutParams.weightBoxHeight;
+            
+            // 计算旋转后的有效尺寸
+            const cos = Math.abs(Math.cos(angle));
+            const sin = Math.abs(Math.sin(angle));
+            const effectiveWidth = boxWidth * cos + boxHeight * sin;
+            const effectiveHeight = boxWidth * sin + boxHeight * cos;
+            
+            const result = findNonOverlappingPosition(prevPos, currentPos, tRatio, boxWidth, boxHeight);
+            
+            // 记录最终权重位置
+            weightPositions.push({ 
+                x: result.x, 
+                y: result.y, 
+                width: effectiveWidth, 
+                height: effectiveHeight 
+            });
+            
+            return result;
+        }
+
+        // 权重输入框创建（压在连线上、防重叠、随线倾斜，带上下标）
+        function createWeightInput(layerPairIndex, fromNode, toNode, prevPos, currentPos, tRatio, hasIntersection, targetLogicalLayer) {
+            // 创建容器
+            const container = document.createElement('div');
+            container.className = 'weight-container';
+            container.dataset.id = `${layerPairIndex},${fromNode},${toNode}`;
+            
+            // 计算上标和下标
+            // 上标：目标层的逻辑层编号
+            const superscript = targetLogicalLayer;
+            // 下标：后一个神经元位置 拼接 前一个神经元位置（位置从1开始）
+            const subscript = `${toNode + 1}${fromNode + 1}`;
+            
+            // 创建标签部分：w + 上下标堆叠 + =
+            const label = document.createElement('span');
+            label.className = 'weight-label';
+            label.innerHTML = `<span class="weight-label-w">w</span><span class="weight-scripts"><span class="weight-superscript">${superscript}</span><span class="weight-subscript">${subscript}</span></span>=`;
+            
+            // 创建输入框
+            const input = document.createElement('input');
+            input.className = 'weight-input';
+            const weightValue = neuralNetworkData.weights[layerPairIndex][fromNode][toNode] || 0;
+            input.value = weightValue;
+
+            // 1. 计算连接线的方向向量与长度
+            const dx = currentPos.x - prevPos.x;
+            const dy = currentPos.y - prevPos.y;
+            const lineLength = Math.sqrt(dx * dx + dy * dy);
+
+            // 2. 计算连接线的倾斜角度（弧度制）
+            const lineAngle = Math.atan2(dy, dx);
+
+            // 3. 计算权重位置
+            let adjustedPos;
+            if (!hasIntersection) {
+                // 没有交叉的连接直接使用中点，不做重叠调整
+                const midX = prevPos.x + dx * 0.5;
+                const midY = prevPos.y + dy * 0.5;
+                adjustedPos = { x: midX, y: midY };
+            } else {
+                // 有交叉的连接使用动态调整位置防重叠
+                adjustedPos = adjustWeightPosition(prevPos, currentPos, tRatio || layoutParams.weightPositionRatio);
+            }
+
+            // 4. 设置容器位置与倾斜角度（压在连线上）
+            const containerHeight = 22;
+            
+            // 组装容器内容
+            container.appendChild(label);
+            container.appendChild(input);
+            
+            // 先添加到 DOM 以获取实际宽度
+            visualizationContainer.appendChild(container);
+            const containerWidth = container.offsetWidth;
+            
+            container.style.left = `${adjustedPos.x - containerWidth / 2}px`;
+            container.style.top = `${adjustedPos.y - containerHeight / 2}px`;
+            container.style.transform = `rotate(${lineAngle}rad)`;
+
+            // 5. 监听输入变化
+            input.addEventListener('change', function() {
+                let value = this.value.replace(/[^0-9.-]/g, '');
+                value = parseFloat(value);
+                value = isNaN(value) ? 0 : Number(value.toFixed(2));
+                this.value = value;
+                const [l, f, t] = container.dataset.id.split(',').map(Number);
+                neuralNetworkData.weights[l][f][t] = value;
+            });
+            
+            return container;
+        }
+
+        // 创建节点自定义参数输入框（显示在神经元左侧，带标题，不遮盖神经元）
+        function createNodeParamInputs(layerIndex, nodeIndex, x, y) {
+            const layer = neuralNetworkData.layers[layerIndex];
+            const node = layer.nodes[nodeIndex];
+            if (!node || !node.customParams || node.customParams.length === 0) return;
+
+            const paramCount = node.customParams.length;
+            const totalParamHeight = paramCount * layoutParams.paramVerticalGap;
+            
+            // 计算所有参数中变量名+上下标的最大宽度，用于对齐等号
+            let maxBaseSubscriptWidth = 0;
+            node.customParams.forEach(param => {
+                let baseWidth = (param.base || 'y').length * 7;
+                let supWidth = param.sup ? param.sup.length * 5 : 0;
+                let subWidth = param.sub ? param.sub.length * 5 : 0;
+                let maxSubscriptWidth = Math.max(supWidth, subWidth);
+                let totalWidth = baseWidth + maxSubscriptWidth;
+                maxBaseSubscriptWidth = Math.max(maxBaseSubscriptWidth, totalWidth);
+            });
+            
+            // 生成完整的层名称
+            let layerName = '';
+            if (layer.type === 'input') {
+                layerName = '输入层';
+            } else if (layer.type === 'output') {
+                layerName = '输出层';
+            } else if (layer.isZLayer) {
+                layerName = `隐藏层${layer.groupIndex}-z`;
+            } else if (layer.isALayer) {
+                layerName = `隐藏层${layer.groupIndex}-a`;
+            } else if (layer.isSingleLayer) {
+                layerName = `隐藏层${layer.singleLayerIndex}`;
+            }
+            
+            // 创建参数组容器（包含标题和所有参数）
+            const paramGroupContainer = document.createElement('div');
+            paramGroupContainer.className = 'node-param-group';
+            paramGroupContainer.dataset.nodeId = `${layerIndex},${nodeIndex}`;
+            paramGroupContainer.style.position = 'absolute';
+            
+            const nodeId = `${layerIndex},${nodeIndex}`;
+            
+            // 检查是否有保存的自定义位置
+            if (panelPositions[nodeId]) {
+                // 使用保存的位置
+                paramGroupContainer.style.left = `${panelPositions[nodeId].x}px`;
+                paramGroupContainer.style.top = `${panelPositions[nodeId].y}px`;
+                paramGroupContainer.style.transform = 'none';
+            } else {
+                // 默认位置：参数面板显示在神经元左侧，紧贴神经元
+                const rightEdge = x - layoutParams.nodeRadius - 5;
+                paramGroupContainer.style.left = `${rightEdge}px`;
+                paramGroupContainer.style.transform = 'translateX(-100%)';
+                paramGroupContainer.style.top = `${y - totalParamHeight / 2 - 12}px`;
+            }
+            
+            paramGroupContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+            paramGroupContainer.style.border = '1px solid #d1d5db';
+            paramGroupContainer.style.borderRadius = '4px';
+            paramGroupContainer.style.padding = '3px 5px';
+            paramGroupContainer.style.zIndex = '100';
+            paramGroupContainer.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+            
+            // 检查是否已固定
+            if (pinnedNodes.has(nodeId)) {
+                paramGroupContainer.classList.add('pinned');
+            }
+            
+            // 鼠标进入参数面板时保持显示，并取消隐藏定时器
+            paramGroupContainer.addEventListener('mouseenter', function() {
+                if (hideTimeout) {
+                    clearTimeout(hideTimeout);
+                    hideTimeout = null;
+                }
+                this.classList.add('hover-active');
+                this.classList.add('visible');
+            });
+            
+            // 鼠标离开参数面板时隐藏（除非已固定）
+            paramGroupContainer.addEventListener('mouseleave', function() {
+                this.classList.remove('hover-active');
+                if (!this.classList.contains('pinned')) {
+                    this.classList.remove('visible');
+                }
+            });
+            
+            // 添加标题容器（包含标题文本和图标）- 可拖动
+            const titleContainer = document.createElement('div');
+            titleContainer.className = 'param-title-container';
+            
+            // 标题文本
+            const titleText = document.createElement('span');
+            titleText.className = 'param-title-text';
+            titleText.textContent = `${layerName} - 节点${nodeIndex + 1}参数`;
+            titleContainer.appendChild(titleText);
+            
+            // 图标容器
+            const iconsContainer = document.createElement('span');
+            iconsContainer.className = 'title-icons';
+            
+            // 固定图标
+            const pinIcon = document.createElement('span');
+            pinIcon.className = 'pin-icon' + (pinnedNodes.has(nodeId) ? ' pinned' : '');
+            pinIcon.textContent = pinnedNodes.has(nodeId) ? '📍' : '📌';
+            pinIcon.title = '点击固定/取消固定显示';
+            pinIcon.addEventListener('click', function(e) {
+                e.stopPropagation();
+                togglePinNode(layerIndex, nodeIndex);
+            });
+            iconsContainer.appendChild(pinIcon);
+            
+            // 折叠图标
+            const collapseIcon = document.createElement('span');
+            collapseIcon.className = 'collapse-icon' + (collapsedNodes.has(nodeId) ? ' collapsed' : '');
+            collapseIcon.textContent = '▼';
+            collapseIcon.title = '点击折叠/展开参数';
+            collapseIcon.addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleCollapseNode(layerIndex, nodeIndex, paramGroupContainer);
+            });
+            iconsContainer.appendChild(collapseIcon);
+            
+            titleContainer.appendChild(iconsContainer);
+            
+            // 拖动功能 - 在标题栏上按下鼠标开始拖动
+            titleContainer.addEventListener('mousedown', function(e) {
+                // 如果点击的是固定图标或折叠图标，不启动拖动
+                if (e.target.classList.contains('pin-icon') || e.target.classList.contains('collapse-icon')) return;
+                
+                e.preventDefault();
+                isDraggingPanel = true;
+                dragPanel = paramGroupContainer;
+                
+                // 获取面板当前位置
+                const rect = paramGroupContainer.getBoundingClientRect();
+                const containerRect = visualizationContainer.getBoundingClientRect();
+                
+                // 如果有transform，需要先移除并设置实际位置
+                if (paramGroupContainer.style.transform === 'translateX(-100%)') {
+                    paramGroupContainer.style.left = `${rect.left - containerRect.left}px`;
+                    paramGroupContainer.style.transform = 'none';
+                }
+                
+                dragOffset.x = e.clientX - rect.left;
+                dragOffset.y = e.clientY - rect.top;
+            });
+            
+            paramGroupContainer.appendChild(titleContainer);
+            
+            // 创建参数内容容器（用于折叠）
+            const paramContent = document.createElement('div');
+            paramContent.className = 'param-content' + (collapsedNodes.has(nodeId) ? ' collapsed' : '');
+            
+            // 添加各个参数
+            node.customParams.forEach((param, paramIndex) => {
+                const paramContainer = document.createElement('div');
+                paramContainer.className = 'node-param-container';
+                paramContainer.dataset.id = `${layerIndex},${nodeIndex},${paramIndex}`;
+                paramContainer.style.position = 'relative';
+                paramContainer.style.display = 'flex';
+                paramContainer.style.alignItems = 'baseline';
+                paramContainer.style.gap = '0';
+            paramContainer.style.margin = '1px 0';
+                paramContainer.style.padding = '0';
+                paramContainer.style.border = 'none';
+                paramContainer.style.backgroundColor = 'transparent';
+
+                // 基础名容器（包含变量名、帽子、上下标）- 设置固定宽度用于对齐等号
+                const baseWrapper = document.createElement('div');
+                baseWrapper.className = 'param-base-wrapper';
+                baseWrapper.style.display = 'inline-flex';
+                baseWrapper.style.alignItems = 'baseline';
+                baseWrapper.style.justifyContent = 'flex-start';
+                baseWrapper.style.position = 'relative';
+                baseWrapper.style.margin = '0';
+                baseWrapper.style.padding = '0.3em 0 0 0';
+                baseWrapper.style.width = `${maxBaseSubscriptWidth}px`;
+                baseWrapper.style.gap = '0';
+                baseWrapper.style.minHeight = '1.2em';
+                
+                // 顶标（帽子）
+                if (param.hat) {
+                    const hatSpan = document.createElement('span');
+                    hatSpan.className = 'param-hat';
+                    hatSpan.textContent = '^';
+                    baseWrapper.appendChild(hatSpan);
+                }
+                
+                // 基础名
+                const baseSpan = document.createElement('span');
+                baseSpan.className = 'param-base';
+                baseSpan.textContent = param.base || 'y';
+                baseWrapper.appendChild(baseSpan);
+                
+                // 上下标容器
+                if (param.sup || param.sub) {
+                    const subscriptWrapper = document.createElement('div');
+                    subscriptWrapper.style.display = 'inline-block';
+                    subscriptWrapper.style.position = 'relative';
+                    const currentSupWidth = param.sup ? param.sup.length * 5 : 0;
+                    const currentSubWidth = param.sub ? param.sub.length * 5 : 0;
+                    const currentMaxWidth = Math.max(currentSupWidth, currentSubWidth, 5);
+                    subscriptWrapper.style.width = `${currentMaxWidth}px`;
+                    subscriptWrapper.style.height = '1.2em';
+                    subscriptWrapper.style.verticalAlign = 'baseline';
+                    subscriptWrapper.style.fontSize = '0';
+                    
+                    if (param.sup) {
+                        const supSpan = document.createElement('span');
+                        supSpan.className = 'param-sup';
+                        supSpan.textContent = param.sup;
+                        subscriptWrapper.appendChild(supSpan);
+                    }
+                    
+                    if (param.sub) {
+                        const subSpan = document.createElement('span');
+                        subSpan.className = 'param-sub';
+                        subSpan.textContent = param.sub;
+                        subscriptWrapper.appendChild(subSpan);
+                    }
+                    
+                    baseWrapper.appendChild(subscriptWrapper);
+                }
+                
+                paramContainer.appendChild(baseWrapper);
+
+                const equalSpan = document.createElement('span');
+                equalSpan.className = 'node-param-equal';
+                equalSpan.textContent = '=';
+                equalSpan.style.margin = '0 2px';
+
+                const valueInput = document.createElement('input');
+                valueInput.className = 'node-param-value edit-param-value';
+                valueInput.dataset.paramIndex = paramIndex;
+                valueInput.value = param.value;
+                valueInput.style.width = 'auto';
+                valueInput.style.minWidth = '30px';
+                valueInput.style.maxWidth = '80px';
+                valueInput.style.margin = '0';
+                valueInput.style.padding = '0 2px';
+                valueInput.style.boxSizing = 'content-box';
+                
+                // 输入框宽度自适应：根据内容动态调整
+                function adjustInputWidth(input) {
+                    const tempSpan = document.createElement('span');
+                    tempSpan.style.visibility = 'hidden';
+                    tempSpan.style.position = 'absolute';
+                    tempSpan.style.whiteSpace = 'nowrap';
+                    tempSpan.style.fontSize = '11px';
+                    tempSpan.textContent = input.value || '0';
+                    document.body.appendChild(tempSpan);
+                    const textWidth = tempSpan.offsetWidth + 8; // 加点padding
+                    document.body.removeChild(tempSpan);
+                    input.style.width = Math.max(30, Math.min(80, textWidth)) + 'px';
+                }
+                
+                // 初始化时调整宽度
+                adjustInputWidth(valueInput);
+                
+                // 输入时动态调整宽度并同步更新
+                valueInput.addEventListener('input', function() {
+                    adjustInputWidth(this);
+                    const [l, n, p] = paramContainer.dataset.id.split(',').map(Number);
+                    neuralNetworkData.layers[l].nodes[n].customParams[p].value = this.value;
+                    // 同步到自定义参数弹窗和参数标签
+                    syncParamValueToPopup(l, n, p, this.value);
+                    syncParamValueToLabel(l, n, p, this.value);
+                });
+                
+                valueInput.addEventListener('blur', function() {
+                    let value = parseFloat(this.value);
+                    value = isNaN(value) ? 0 : Number(value.toFixed(2));
+                    this.value = value;
+                    const [l, n, p] = paramContainer.dataset.id.split(',').map(Number);
+                    neuralNetworkData.layers[l].nodes[n].customParams[p].value = value;
+                    // 同步格式化后的值
+                    syncParamValueToPopup(l, n, p, value);
+                    syncParamValueToLabel(l, n, p, value);
+                });
+
+                paramContainer.appendChild(equalSpan);
+                paramContainer.appendChild(valueInput);
+                paramContent.appendChild(paramContainer);
+            });
+            
+            paramGroupContainer.appendChild(paramContent);
+            visualizationContainer.appendChild(paramGroupContainer);
+        }
+        
+        // 切换折叠状态
+        function toggleCollapseNode(layerIndex, nodeIndex, panel) {
+            const nodeId = `${layerIndex},${nodeIndex}`;
+            const collapseIcon = panel.querySelector('.collapse-icon');
+            const paramContent = panel.querySelector('.param-content');
+            
+            if (collapsedNodes.has(nodeId)) {
+                collapsedNodes.delete(nodeId);
+                if (collapseIcon) collapseIcon.classList.remove('collapsed');
+                if (paramContent) paramContent.classList.remove('collapsed');
+            } else {
+                collapsedNodes.add(nodeId);
+                if (collapseIcon) collapseIcon.classList.add('collapsed');
+                if (paramContent) paramContent.classList.add('collapsed');
+            }
+        }
+        
+        // 切换全局参数显示模式
+        function toggleAllParams() {
+            showAllParamsMode = !showAllParamsMode;
+            const btn = document.getElementById('toggleAllParams');
+            
+            if (showAllParamsMode) {
+                btn.textContent = '隐藏所有参数';
+                btn.classList.remove('bg-orange-500', 'hover:bg-orange-600');
+                btn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+            } else {
+                btn.textContent = '显示所有参数';
+                btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+                btn.classList.add('bg-orange-500', 'hover:bg-orange-600');
+            }
+            
+            // 重新绘制以更新参数标签
+            drawNeuralNetwork();
+        }
+        
+        // 权重显示状态
+        let showAllWeightsMode = false;
+        
+        // 切换全局权重显示模式
+        function toggleAllWeights() {
+            showAllWeightsMode = !showAllWeightsMode;
+            const btn = document.getElementById('toggleAllWeights');
+            const containers = visualizationContainer.querySelectorAll('.weight-container');
+            
+            if (showAllWeightsMode) {
+                btn.textContent = '隐藏所有权重';
+                btn.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+                btn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                // 显示所有权重
+                containers.forEach(container => {
+                    container.classList.add('visible');
+                });
+            } else {
+                btn.textContent = '显示所有权重';
+                btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+                btn.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
+                // 隐藏所有权重
+                containers.forEach(container => {
+                    container.classList.remove('visible');
+                });
+            }
+        }
+        
+        // 创建节点参数标签（显示在节点上方或下方）
+        function createNodeParamLabel(layerIndex, nodeIndex, x, y, canvasHeight) {
+            const layer = neuralNetworkData.layers[layerIndex];
+            const node = layer.nodes[nodeIndex];
+            if (!node || !node.customParams || node.customParams.length === 0) return;
+            
+            const label = document.createElement('div');
+            label.className = 'node-param-label';
+            label.dataset.nodeId = `${layerIndex},${nodeIndex}`;
+            
+            // 构建参数显示内容
+            node.customParams.forEach((param, idx) => {
+                const paramItem = document.createElement('span');
+                paramItem.className = 'param-item';
+                paramItem.style.position = 'relative';
+                
+                // 顶标（帽子）
+                if (param.hat) {
+                    const hatSpan = document.createElement('span');
+                    hatSpan.className = 'param-hat';
+                    hatSpan.textContent = '^';
+                    paramItem.appendChild(hatSpan);
+                }
+                
+                // 基础名
+                const baseSpan = document.createElement('span');
+                baseSpan.className = 'param-base';
+                baseSpan.textContent = param.base || 'b';
+                paramItem.appendChild(baseSpan);
+                
+                // 上下标（参考 w 参数的显示方式）
+                if (param.sup || param.sub) {
+                    const scriptsSpan = document.createElement('span');
+                    scriptsSpan.className = 'param-scripts';
+                    
+                    // 始终创建上标元素（即使为空也占位）
+                    const supSpan = document.createElement('span');
+                    supSpan.className = 'param-sup';
+                    supSpan.textContent = param.sup || '';
+                    scriptsSpan.appendChild(supSpan);
+                    
+                    // 始终创建下标元素（即使为空也占位）
+                    const subSpan = document.createElement('span');
+                    subSpan.className = 'param-sub';
+                    subSpan.textContent = param.sub || '';
+                    scriptsSpan.appendChild(subSpan);
+                    
+                    paramItem.appendChild(scriptsSpan);
+                }
+                
+                // 等号
+                const equalSpan = document.createElement('span');
+                equalSpan.textContent = '=';
+                paramItem.appendChild(equalSpan);
+                
+                // 值（可编辑输入框）
+                const valueInput = document.createElement('input');
+                valueInput.className = 'param-value-input';
+                valueInput.type = 'text';
+                valueInput.value = param.value;
+                valueInput.dataset.layerIndex = layerIndex;
+                valueInput.dataset.nodeIndex = nodeIndex;
+                valueInput.dataset.paramIndex = idx;
+                
+                // 监听值变化（使用 input 事件实现实时更新）
+                valueInput.addEventListener('input', function() {
+                    const li = parseInt(this.dataset.layerIndex);
+                    const ni = parseInt(this.dataset.nodeIndex);
+                    const pi = parseInt(this.dataset.paramIndex);
+                    if (neuralNetworkData.layers[li] && 
+                        neuralNetworkData.layers[li].nodes[ni] && 
+                        neuralNetworkData.layers[li].nodes[ni].customParams[pi]) {
+                        neuralNetworkData.layers[li].nodes[ni].customParams[pi].value = this.value;
+                        // 同步更新弹窗中的输入框
+                        syncParamValueToPopup(li, ni, pi, this.value);
+                    }
+                });
+                
+                // 阻止事件冒泡，避免触发画布拖动
+                valueInput.addEventListener('mousedown', function(e) {
+                    e.stopPropagation();
+                });
+                
+                paramItem.appendChild(valueInput);
+                
+                label.appendChild(paramItem);
+                
+                // 添加分隔符（除了最后一个）
+                if (idx < node.customParams.length - 1) {
+                    const separator = document.createElement('span');
+                    separator.textContent = ',';
+                    separator.style.marginRight = '1px';
+                    label.appendChild(separator);
+                }
+            });
+            
+            // 先添加到DOM以获取实际尺寸
+            visualizationContainer.appendChild(label);
+            const labelRect = label.getBoundingClientRect();
+            const labelHeight = labelRect.height;
+            const labelWidth = labelRect.width;
+            
+            // 判断显示在上方还是下方
+            const nodeRadius = layoutParams.nodeRadius;
+            const margin = 1; // 与节点的间距（贴近节点）
+            const topSpace = y - nodeRadius - margin - labelHeight;
+            const bottomSpace = canvasHeight - (y + nodeRadius + margin + labelHeight);
+            
+            // 优先显示在上方，如果上方空间不足则显示在下方
+            let labelY;
+            if (topSpace >= 20) {
+                // 显示在上方
+                labelY = y - nodeRadius - margin - labelHeight;
+            } else {
+                // 显示在下方
+                labelY = y + nodeRadius + margin;
+            }
+            
+            label.style.left = `${x - labelWidth / 2}px`;
+            label.style.top = `${labelY}px`;
+        }
+        
+        // 清除所有参数标签
+        function clearParamLabels() {
+            const labels = visualizationContainer.querySelectorAll('.node-param-label');
+            labels.forEach(label => label.remove());
+        }
+        
+        // 更新所有参数标签（不重绘整个网络）
+        function updateParamLabels() {
+            if (!showAllParamsMode) return;
+            
+            // 清除现有标签
+            clearParamLabels();
+            
+            // 重新创建所有参数标签
+            neuralNetworkData.layers.forEach((layer, layerIndex) => {
+                layer.nodes.forEach((node, nodeIndex) => {
+                    if (node.x && node.y && node.customParams && node.customParams.length > 0) {
+                        createNodeParamLabel(layerIndex, nodeIndex, node.x, node.y, canvas.height);
+                    }
+                });
+            });
+        }
+
+        // 绘制神经网络（整合所有优化功能：动态垂直间距、防重叠、自适应紧凑布局）
+        function drawNeuralNetwork(isRetry = false) {
+            const layers = neuralNetworkData.layers;
+            const layerCount = layers.length;
+            if (layerCount < 2) return;
+            
+            // 首次绘制时重置动态倍数
+            if (!isRetry) {
+                layoutParams.dynamicLayerWidthMultiplier = 1.0;
+                layoutParams.dynamicVerticalMultiplier = 1.0;
+            }
+
+            // 计算最大节点数，用于动态调整间距
+            const maxNodeCount = Math.max(...layers.map(l => l.nodeCount));
+            
+            // 根据层数和节点数动态调整基础间距，使布局更紧凑
+            // 层数越多，层间距越小；节点数越多，垂直间距越小
+            const layerWidthFactor = Math.max(0.5, 1 - (layerCount - 2) * 0.08);
+            const verticalFactor = Math.max(0.6, 1 - (maxNodeCount - 3) * 0.05);
+            
+            const effectiveLayerWidth = Math.max(
+                layoutParams.minLayerWidth,
+                layoutParams.baseLayerWidth * layerWidthFactor * layoutParams.dynamicLayerWidthMultiplier
+            );
+            const effectiveVerticalSpacing = Math.max(
+                layoutParams.minVerticalSpacing,
+                layoutParams.verticalSpacingBase * verticalFactor * layoutParams.dynamicVerticalMultiplier
+            );
+            
+            // 一对一连接（z→a层）使用更小的间距
+            const oneToOneLayerWidth = Math.max(60, effectiveLayerWidth * 0.4);
+            
+            // 计算每个层间隔的宽度（区分一对一和全连接）
+            const layerGaps = [];
+            for (let i = 0; i < layerCount - 1; i++) {
+                const isOneToOne = layers[i].isZLayer && layers[i + 1].isALayer;
+                layerGaps.push(isOneToOne ? oneToOneLayerWidth : effectiveLayerWidth);
+            }
+            
+            // 计算总宽度
+            const totalGapWidth = layerGaps.reduce((sum, gap) => sum + gap, 0);
+
+            // 1. 动态计算画布宽度（基于层数和基础宽度，紧凑布局）
+            const requiredWidth = totalGapWidth + 2 * layoutParams.canvasPadding;
+            canvas.width = Math.max(600, requiredWidth);
+
+            // 2. 预计算每个节点的垂直高度需求和每层的总高度
+            let maxLayerHeight = 0;
+            const layerLayouts = []; // 存储每层的节点布局信息 { totalHeight: number, nodeHeights: number[] }
+
+            layers.forEach((layer, layerIndex) => {
+                let currentY = 0;
+                const nodeHeights = []; // 记录每个节点的占用高度（含参数 + 动态间距）
+                
+                // 计算当前层节点的连接密度（取前后层最大连接数）
+                let densityPadding = 0;
+                
+                // 获取前一层节点数 (fan-in)
+                let fanIn = 0;
+                if (layerIndex > 0) {
+                    const prevLayer = layers[layerIndex - 1];
+                    // 如果是 Z->A 层，则是 1:1 连接，否则是全连接
+                    fanIn = (prevLayer.isZLayer && layer.isALayer) ? 1 : prevLayer.nodeCount;
+                }
+                
+                // 获取后一层节点数 (fan-out)
+                let fanOut = 0;
+                if (layerIndex < layers.length - 1) {
+                    const nextLayer = layers[layerIndex + 1];
+                    // 如果是 Z->A 层，则是 1:1 连接，否则是全连接
+                    fanOut = (layer.isZLayer && nextLayer.isALayer) ? 1 : nextLayer.nodeCount;
+                }
+                
+                // 取最大连接数作为密度参考，但限制增量避免过度扩展
+                const maxConnectivity = Math.max(fanIn, fanOut);
+                
+                // 连接数超过阈值时增加间距，但限制最大增量
+                if (maxConnectivity > 2) {
+                    densityPadding = Math.min(30, (maxConnectivity - 2) * 8);
+                }
+
+                // 使用 nodeCount 而不是 layer.nodes.length，确保与实际节点数一致
+                for (let nodeIndex = 0; nodeIndex < layer.nodeCount; nodeIndex++) {
+                    // 节点自身占用高度（直径 + 基础间距 + 密度动态间距）
+                    const nodeTotalHeight = effectiveVerticalSpacing + densityPadding;
+                    nodeHeights.push(nodeTotalHeight);
+                    currentY += nodeTotalHeight;
+                }
+
+                // 层总高度 = 所有节点高度之和
+                const totalHeight = Math.max(currentY, (layer.nodeCount - 1) * effectiveVerticalSpacing + 80);
+                
+                if (totalHeight > maxLayerHeight) {
+                    maxLayerHeight = totalHeight;
+                }
+
+                layerLayouts.push({
+                    totalHeight: totalHeight,
+                    nodeHeights: nodeHeights
+                });
+            });
+
+            // 3. 确保画布高度足够但不过大
+            canvas.height = Math.max(400, maxLayerHeight + 100);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            clearEditableInputs();
+            clearParamLabels();
+            
+            // 计算每层的X坐标（基于累计的层间距，并居中显示）
+            const totalNetworkWidth = totalGapWidth; // 网络总宽度（不含边距）
+            const startX = (canvas.width - totalNetworkWidth) / 2; // 居中起始位置
+            const layerXPositions = [startX];
+            for (let i = 0; i < layerCount - 1; i++) {
+                layerXPositions.push(layerXPositions[i] + layerGaps[i]);
+            }
+            
+            const layerNodePositions = [];
+            
+            // 计算每个物理层对应的逻辑层编号（用于节点标签）
+            // 规则：输入层=0，每个隐藏层（单层或z-a组）算一个逻辑层，z-a组中a层与z层共享编号
+            const logicalLayerIndicesForLabels = [];
+            let logicalIdx = 0;
+            for (let i = 0; i < layerCount; i++) {
+                const layer = layers[i];
+                if (layer.type === 'input') {
+                    logicalLayerIndicesForLabels.push(0);
+                    logicalIdx = 1;
+                } else if (layer.type === 'output') {
+                    logicalLayerIndicesForLabels.push(logicalIdx);
+                } else if (layer.isALayer) {
+                    // a层与前面的z层共享逻辑层编号
+                    logicalLayerIndicesForLabels.push(logicalLayerIndicesForLabels[i - 1]);
+                } else {
+                    // z层或单层隐藏层
+                    logicalLayerIndicesForLabels.push(logicalIdx);
+                    logicalIdx++;
+                }
+            }
+            
+            // 4. 绘制各层节点
+            layers.forEach((layer, layerIndex) => {
+                const layerX = layerXPositions[layerIndex];
+                const nodeCount = layer.nodeCount;
+                const layout = layerLayouts[layerIndex];
+                
+                // 计算起始Y坐标，使该层在画布垂直居中
+                let currentY = (canvas.height - layout.totalHeight) / 2;
+                
+                const layerNodeY = [];
+                
+                // 检查当前层是否是 a 层，如果是则复用对应 z 层的 Y 坐标
+                let useZLayerYPositions = false;
+                let zLayerYPositions = null;
+                if (layer.isALayer && layerIndex > 0) {
+                    const prevLayer = layers[layerIndex - 1];
+                    if (prevLayer.isZLayer && prevLayer.groupIndex === layer.groupIndex) {
+                        // 找到对应的 z 层，复用其 Y 坐标
+                        useZLayerYPositions = true;
+                        zLayerYPositions = layerNodePositions[layerIndex - 1].yList;
+                    }
+                }
+
+                for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+                    let nodeY;
+                    
+                    if (useZLayerYPositions && zLayerYPositions && nodeIndex < zLayerYPositions.length) {
+                        // a 层使用对应 z 层节点的 Y 坐标，保持水平对齐
+                        nodeY = zLayerYPositions[nodeIndex];
+                    } else {
+                        const nodeHeight = layout.nodeHeights[nodeIndex];
+                        // 节点位于其分配空间的中心位置
+                        nodeY = currentY + nodeHeight / 2;
+                        currentY += nodeHeight;
+                    }
+                    
+                    layerNodeY.push(nodeY);
+                    
+                    // 存储节点坐标供点击检测使用
+                    layer.nodes[nodeIndex].x = layerX;
+                    layer.nodes[nodeIndex].y = nodeY;
+
+                    // 绘制节点（z层虚线，a层/输入层/输出层实线）
+                    ctx.beginPath();
+                    ctx.arc(layerX, nodeY, layoutParams.nodeRadius, 0, Math.PI * 2);
+                    if (layer.isZLayer) {
+                        ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
+                        ctx.strokeStyle = '#f59e0b';
+                        ctx.setLineDash([5, 3]);
+                    } else {
+                        ctx.fillStyle = layer.type === 'input' ? '#3b82f6' : layer.type === 'hidden' ? '#f59e0b' : '#10b981';
+                        ctx.strokeStyle = '#1e293b';
+                        ctx.setLineDash([]);
+                    }
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    // 绘制节点标签（带上下标）
+                    ctx.fillStyle = layer.isZLayer ? '#1e293b' : '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // 根据层类型生成节点标签
+                    const logicalLayer = logicalLayerIndicesForLabels[layerIndex];
+                    
+                    if (layer.type === 'input') {
+                        // 输入层：x + 下标（节点位置）
+                        ctx.font = '12px Arial';
+                        ctx.fillText('x', layerX - 4, nodeY);
+                        ctx.font = '8px Arial';
+                        ctx.fillText(nodeIndex + 1, layerX + 5, nodeY + 4);
+                    } else if (layer.type === 'output') {
+                        // 输出层：ŷ + 下标（节点位置）
+                        ctx.font = '12px Arial';
+                        ctx.fillText('ŷ', layerX - 3, nodeY);
+                        ctx.font = '8px Arial';
+                        ctx.fillText(nodeIndex + 1, layerX + 6, nodeY + 4);
+                    } else if (layer.isZLayer) {
+                        // z层：z + 上标（逻辑层）+ 下标（节点位置）
+                        ctx.font = '12px Arial';
+                        ctx.fillText('z', layerX - 4, nodeY);
+                        ctx.font = '7px Arial';
+                        ctx.fillText(logicalLayer, layerX + 3, nodeY - 5);
+                        ctx.fillText(nodeIndex + 1, layerX + 3, nodeY + 5);
+                    } else if (layer.isALayer) {
+                        // a层：a + 上标（逻辑层）+ 下标（节点位置）
+                        ctx.font = '12px Arial';
+                        ctx.fillText('a', layerX - 4, nodeY);
+                        ctx.font = '7px Arial';
+                        ctx.fillText(logicalLayer, layerX + 3, nodeY - 5);
+                        ctx.fillText(nodeIndex + 1, layerX + 3, nodeY + 5);
+                    } else if (layer.isSingleLayer) {
+                        // 单层隐藏层：a + 上标（逻辑层）+ 下标（节点位置）
+                        ctx.font = '12px Arial';
+                        ctx.fillText('a', layerX - 4, nodeY);
+                        ctx.font = '7px Arial';
+                        ctx.fillText(logicalLayer, layerX + 3, nodeY - 5);
+                        ctx.fillText(nodeIndex + 1, layerX + 3, nodeY + 5);
+                    }
+                    
+                    // 绘制节点自定义参数
+                    createNodeParamInputs(layerIndex, nodeIndex, layerX, nodeY);
+                    
+                    // 如果开启了全局参数显示模式，创建参数标签
+                    if (showAllParamsMode) {
+                        createNodeParamLabel(layerIndex, nodeIndex, layerX, nodeY, canvas.height);
+                    }
+                }
+                
+                layerNodePositions.push({
+                    x: layerX,
+                    yList: layerNodeY,
+                    nodeCount: nodeCount
+                });
+                
+                // 绘制层名称（按组编号）
+                ctx.fillStyle = '#1e293b';
+                ctx.font = '16px Arial bold';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                let layerName = '';
+                if (layer.type === 'input') {
+                    layerName = '输入层';
+                } else if (layer.type === 'output') {
+                    layerName = '输出层';
+                } else if (layer.isZLayer) {
+                    layerName = `隐藏层 ${layer.groupIndex}-z`;
+                } else if (layer.isALayer) {
+                    layerName = `隐藏层 ${layer.groupIndex}-a`;
+                } else if (layer.isSingleLayer) {
+                    layerName = `隐藏层 ${layer.singleLayerIndex}`;
+                }
+                ctx.fillText(layerName, layerX, layoutParams.canvasPadding / 2);
+            });
+            
+            // 绘制连线
+            const weightInputs = []; // 收集所有权重输入框以便后续做碰撞检测
+            
+            // 清空连接线信息（用于悬浮检测）
+            connectionLines = [];
+
+            // 先计算每个物理层对应的逻辑层编号
+            // 规则：输入层=0，每个隐藏层（单层或z-a组）算一个逻辑层，z-a组中a层与z层共享编号
+            const logicalLayerIndices = [];
+            let logicalIndex = 0;
+            for (let i = 0; i < layerCount; i++) {
+                const layer = layers[i];
+                if (layer.type === 'input') {
+                    logicalLayerIndices.push(0);
+                    logicalIndex = 1;
+                } else if (layer.type === 'output') {
+                    logicalLayerIndices.push(logicalIndex);
+                } else if (layer.isALayer) {
+                    // a层与前面的z层共享逻辑层编号
+                    logicalLayerIndices.push(logicalLayerIndices[i - 1]);
+                } else {
+                    // z层或单层隐藏层
+                    logicalLayerIndices.push(logicalIndex);
+                    logicalIndex++;
+                }
+            }
+
+            // 先绘制所有连线并收集权重
+            // 1. 收集所有连接信息
+            const connections = [];
+
+            for (let i = 0; i < layerCount - 1; i++) {
+                const currentLayerNodes = layerNodePositions[i];
+                const nextLayerNodes = layerNodePositions[i+1];
+                const layerPairIndex = i;
+                
+                const isZALayerPair = layers[i].isZLayer && layers[i+1].isALayer;
+                
+                // 获取目标层的逻辑层编号（用于权重上标）
+                const targetLogicalLayer = logicalLayerIndices[i + 1];
+                
+                currentLayerNodes.yList.forEach((prevNodeY, prevNodeIndex) => {
+                    const toNodeRange = isZALayerPair 
+                        ? (prevNodeIndex < nextLayerNodes.nodeCount ? [prevNodeIndex] : []) 
+                        : Array.from({length: nextLayerNodes.nodeCount}, (_, k) => k);
+
+                    toNodeRange.forEach(currentNodeIndex => {
+                        const prevPos = { x: currentLayerNodes.x + layoutParams.nodeRadius, y: prevNodeY };
+                        const currentPos = { x: nextLayerNodes.x - layoutParams.nodeRadius, y: nextLayerNodes.yList[currentNodeIndex] };
+                        
+                        // 计算自然中点
+                        const midX = (prevPos.x + currentPos.x) / 2;
+                        const midY = (prevPos.y + currentPos.y) / 2;
+                        
+                        connections.push({
+                            layerPairIndex,
+                            fromNode: prevNodeIndex,
+                            toNode: currentNodeIndex,
+                            prevPos,
+                            currentPos,
+                            midX,
+                            midY,
+                            tRatio: 0.5, // 默认 0.5（中点）
+                            isOneToOne: isZALayerPair, // 标记是否为一对一连接
+                            targetLogicalLayer // 目标层的逻辑层编号
+                        });
+                        
+                        // 保存连接线信息用于悬浮检测
+                        connectionLines.push({
+                            layerPairIndex,
+                            fromNode: prevNodeIndex,
+                            toNode: currentNodeIndex,
+                            prevPos,
+                            currentPos
+                        });
+                    });
+                });
+            }
+
+            // 2. 预分配 tRatio，尽量分散权重位置
+            // 按层对分组，检测每条连接线是否与其他连接线有交叉
+            // 没有交叉的连接保持 tRatio = 0.5（中点）
+            const layerPairGroups = {};
+            connections.forEach(conn => {
+                const key = conn.layerPairIndex;
+                if (!layerPairGroups[key]) layerPairGroups[key] = [];
+                layerPairGroups[key].push(conn);
+            });
+            
+            // 检测两条连接线是否交叉
+            function doLinesIntersect(conn1, conn2) {
+                // 如果两条线的起点或终点相同，不算交叉
+                if (conn1.fromNode === conn2.fromNode || conn1.toNode === conn2.toNode) {
+                    return false;
+                }
+                // 检测交叉：如果起点顺序和终点顺序不同，则交叉
+                const startOrder = conn1.prevPos.y < conn2.prevPos.y;
+                const endOrder = conn1.currentPos.y < conn2.currentPos.y;
+                return startOrder !== endOrder;
+            }
+            
+            // 对每个层对内的连接进行智能分配
+            Object.values(layerPairGroups).forEach(group => {
+                const count = group.length;
+                if (count <= 1) {
+                    // 只有一条连接，固定在中点
+                    if (count === 1) {
+                        group[0].tRatio = 0.5;
+                        group[0].hasIntersection = false;
+                    }
+                    return;
+                }
+                
+                // 为每条连接检测是否与其他连接有交叉
+                group.forEach(conn => {
+                    conn.hasIntersection = false;
+                    for (let i = 0; i < group.length; i++) {
+                        if (group[i] !== conn && doLinesIntersect(conn, group[i])) {
+                            conn.hasIntersection = true;
+                            break;
+                        }
+                    }
+                });
+                
+                // 筛选出有交叉的连接，需要分散位置
+                const intersectingConns = group.filter(conn => conn.hasIntersection);
+                
+                // 没有交叉的连接保持中点
+                group.forEach(conn => {
+                    if (!conn.hasIntersection) {
+                        conn.tRatio = 0.5;
+                    }
+                });
+                
+                // 有交叉的连接按 Y 坐标排序并分散
+                if (intersectingConns.length > 1) {
+                    intersectingConns.sort((a, b) => a.midY - b.midY);
+                    const maxSpread = Math.min(0.6, 0.1 * intersectingConns.length);
+                    const step = maxSpread / (intersectingConns.length - 1 || 1);
+                    const startT = 0.5 - maxSpread / 2;
+                    
+                    intersectingConns.forEach((conn, index) => {
+                        conn.tRatio = startT + index * step;
+                    });
+                }
+            });
+            
+            // 3. 检测重叠并动态调整
+            let needsExpansion = false;
+            let expansionAttempts = 0;
+            const maxExpansionAttempts = 3;
+            
+            do {
+                needsExpansion = false;
+                weightPositions = []; // 重置权重位置记录
+                
+                // 预计算所有权重位置，检测是否有无法解决的重叠
+                connections.forEach(conn => {
+                    const dx = conn.currentPos.x - conn.prevPos.x;
+                    const dy = conn.currentPos.y - conn.prevPos.y;
+                    const angle = Math.atan2(dy, dx);
+                    
+                    const result = findNonOverlappingPosition(
+                        conn.prevPos, 
+                        conn.currentPos, 
+                        conn.tRatio,
+                        layoutParams.weightBoxWidth,
+                        layoutParams.weightBoxHeight
+                    );
+                    
+                    // 计算旋转后的有效尺寸
+                    const cos = Math.abs(Math.cos(angle));
+                    const sin = Math.abs(Math.sin(angle));
+                    const effectiveWidth = layoutParams.weightBoxWidth * cos + layoutParams.weightBoxHeight * sin;
+                    const effectiveHeight = layoutParams.weightBoxWidth * sin + layoutParams.weightBoxHeight * cos;
+                    
+                    conn.adjustedPos = result;
+                    weightPositions.push({
+                        x: result.x,
+                        y: result.y,
+                        width: effectiveWidth,
+                        height: effectiveHeight
+                    });
+                    
+                    if (result.needsExpand) {
+                        needsExpansion = true;
+                    }
+                });
+                
+                if (needsExpansion && expansionAttempts < maxExpansionAttempts) {
+                    expansionAttempts++;
+                    // 增加层间距和垂直间距
+                    layoutParams.dynamicLayerWidthMultiplier += 0.25;
+                    layoutParams.dynamicVerticalMultiplier += 0.2;
+                    
+                    // 递归重绘
+                    console.log(`权重重叠无法解决，扩展布局并重绘 (尝试 ${expansionAttempts})`);
+                    return drawNeuralNetwork(true);
+                }
+            } while (needsExpansion && expansionAttempts < maxExpansionAttempts);
+
+            // 4. 绘制连接线和权重标签
+            weightPositions = []; // 重置，让 createWeightInput 重新计算
+            connections.forEach(conn => {
+                // 绘制连接线
+                ctx.beginPath();
+                ctx.moveTo(conn.prevPos.x, conn.prevPos.y);
+                ctx.lineTo(conn.currentPos.x, conn.currentPos.y);
+                ctx.strokeStyle = '#64748b';
+                ctx.lineWidth = 1;
+                
+                // z-a层之间（同一隐藏层组内）使用虚线
+                if (conn.isOneToOne) {
+                    ctx.setLineDash([5, 3]); // 虚线样式
+                } else {
+                    ctx.setLineDash([]); // 实线
+                }
+                ctx.stroke();
+                ctx.setLineDash([]); // 重置为实线
+                
+                // z-a层之间不显示权重（它们属于同一层）
+                if (!conn.isOneToOne) {
+                    // 创建权重标签
+                    const inputEl = createWeightInput(
+                        conn.layerPairIndex, 
+                        conn.fromNode, 
+                        conn.toNode, 
+                        conn.prevPos, 
+                        conn.currentPos, 
+                        conn.tRatio,
+                        conn.hasIntersection,
+                        conn.targetLogicalLayer
+                    );
+                    if (inputEl) weightInputs.push(inputEl);
+                }
+            });
+            
+            // 如果开启了显示所有权重模式，保持显示状态
+            if (showAllWeightsMode) {
+                const containers = visualizationContainer.querySelectorAll('.weight-container');
+                containers.forEach(container => {
+                    container.classList.add('visible');
+                });
+            }
+        }
+    </script>
+</body>
+</html>
